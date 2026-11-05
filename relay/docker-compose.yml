@@ -1,0 +1,20 @@
+services:
+  relay:
+    build: .
+    container_name: zero-margin-relay
+    restart: unless-stopped
+    # Only reachable from this machine; the public route is the Cloudflare tunnel.
+    ports:
+      - "127.0.0.1:7700:7700"
+    environment:
+      - TRUST_PROXY=1
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 128m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "2"

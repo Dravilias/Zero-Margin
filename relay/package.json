@@ -1,0 +1,9 @@
+{
+  "name": "zero-margin-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": { "start": "node server.mjs" },
+  "dependencies": { "ws": "^8.22.1" }
+}

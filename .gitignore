@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output and packaged games
+dist/
+dist-electron/
+release/
+
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+*.key
+
+# Logs and caches
+*.log
+*.tsbuildinfo
+.vite/
+.cache/
+coverage/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+CLAUDE.md
+CLAUDE.local.md
