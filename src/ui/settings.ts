@@ -15,8 +15,6 @@ export interface Settings {
 }
 
 export const DEFAULT_RELAY = 'wss://relay.dravilias.me';
-export const DEFAULT_WRITER_MODEL = 'gemini-3.8-flash';
-export const DEFAULT_RUNNER_MODEL = 'gemini-3.5-flash-lite';
 const KEY = 'zm.settings.v1';
 
 function systemLang(): Lang {
@@ -25,7 +23,7 @@ function systemLang(): Lang {
 
 const defaults = (): Settings => ({
   lang: systemLang(), name: '', volume: 0.6, speed: 'normal', rain: true, relayUrl: DEFAULT_RELAY, tutorialDone: false,
-  gmEnabled: true, gmWriterModel: DEFAULT_WRITER_MODEL, gmRunnerModel: DEFAULT_RUNNER_MODEL,
+  gmEnabled: true, gmWriterModel: '', gmRunnerModel: '',
 });
 
 export const settings: Settings = defaults();

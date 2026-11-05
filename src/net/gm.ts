@@ -8,7 +8,7 @@ import type { FactionId, ScenarioId, Stats, ThemeId } from '../engine/types';
  */
 
 export type LlmTier = 'writer' | 'runner';
-export type LlmFailure = 'nokey' | 'quota' | 'blocked' | 'network' | 'badkey' | 'error';
+export type LlmFailure = 'nokey' | 'quota' | 'blocked' | 'network' | 'badkey' | 'notfound' | 'error';
 export interface LlmRequest { tier: LlmTier; system: string; prompt: string; json: boolean; maxTokens: number }
 export type LlmReply = { ok: true; text: string } | { ok: false; reason: LlmFailure };
 export interface LlmTransport { generate(req: LlmRequest): Promise<LlmReply> }

@@ -2,8 +2,8 @@ import { app, BrowserWindow, Menu, ipcMain, safeStorage, session, shell } from '
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { callGemini, type GeminiRequest } from './gemini';
-import { fakeGemini, runSmoke } from './smoke';
+import { callChat, normalizeEndpoint, type LlmCall } from './llm';
+import { fakeLlmReply, runSmoke } from './smoke';
 
 const smokeTest = process.env.ZM_SMOKE_TEST === '1';
 const fakeLlm = smokeTest && process.env.ZM_SMOKE_CAMPAIGN === '1';
@@ -46,15 +46,25 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-/* ---------- The Gemini key: kept encrypted by this process and never handed back to the page ---------- */
+/* ---------- The model server: the key is encrypted here, tied to one address, and never handed back to the page ---------- */
 
-const keyFile = () => path.join(app.getPath('userData'), 'gemini.key');
+const keyFile = () => path.join(app.getPath('userData'), 'llm.key');
+const endpointFile = () => path.join(app.getPath('userData'), 'llm-endpoint.txt');
 let keyInMemory = '';
+let endpointInMemory = '';
 
 /** Linux without a keyring falls back to a hard-coded password, which isn't really encryption. */
 function canEncrypt(): boolean {
   if (!safeStorage.isEncryptionAvailable()) return false;
   return process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text';
+}
+
+function loadEndpoint(): string {
+  if (endpointInMemory) return endpointInMemory;
+  try {
+    endpointInMemory = normalizeEndpoint(fs.readFileSync(endpointFile(), 'utf8')) ?? '';
+  } catch { /* nothing configured yet */ }
+  return endpointInMemory;
 }
 
 function loadKey(): string {
@@ -65,27 +75,38 @@ function loadKey(): string {
   return keyInMemory;
 }
 
-function setKey(key: string): { saved: boolean } {
-  keyInMemory = key.trim();
+/** Changing the address without giving a new key forgets the old one, so a key can't be sent to a server it wasn't entered for. */
+function configure(rawEndpoint: string, newKey: string): { ok: boolean; saved: boolean } {
+  const endpoint = rawEndpoint.trim() ? normalizeEndpoint(rawEndpoint) : '';
+  if (endpoint === null) return { ok: false, saved: false };
+  const moved = endpoint !== loadEndpoint();
+  const key = newKey.trim() || (moved ? '' : loadKey());
+  endpointInMemory = endpoint;
+  keyInMemory = key;
+  let saved = false;
   try {
-    if (!keyInMemory) fs.rmSync(keyFile(), { force: true });
-    else if (canEncrypt()) {
-      fs.writeFileSync(keyFile(), safeStorage.encryptString(keyInMemory), { mode: 0o600 });
-      return { saved: true };
-    }
+    if (endpoint) fs.writeFileSync(endpointFile(), endpoint);
+    else fs.rmSync(endpointFile(), { force: true });
+    if (key && canEncrypt()) {
+      fs.writeFileSync(keyFile(), safeStorage.encryptString(key), { mode: 0o600 });
+      saved = true;
+    } else fs.rmSync(keyFile(), { force: true });
   } catch { /* it still works until the game closes */ }
-  return { saved: false };
+  return { ok: true, saved: saved || !key };
 }
 
 function registerLlm(): void {
-  ipcMain.handle('zm-llm-status', () => ({ hasKey: fakeLlm || !!loadKey(), canSave: canEncrypt() }));
-  ipcMain.handle('zm-llm-set-key', (_e, key: unknown) => setKey(typeof key === 'string' ? key.slice(0, 200) : ''));
-  ipcMain.handle('zm-llm-generate', async (_e, req: GeminiRequest) => {
-    const clean: GeminiRequest = {
-      model: String(req?.model ?? ''), system: String(req?.system ?? '').slice(0, 20000), prompt: String(req?.prompt ?? '').slice(0, 20000),
+  ipcMain.handle('zm-llm-status', () => ({
+    endpoint: fakeLlm ? 'http://localhost:9/v1' : loadEndpoint(), hasKey: !!loadKey(), canSave: canEncrypt(),
+  }));
+  ipcMain.handle('zm-llm-configure', (_e, cfg: { endpoint?: unknown; key?: unknown }) =>
+    configure(String(cfg?.endpoint ?? '').slice(0, 300), String(cfg?.key ?? '').slice(0, 500)));
+  ipcMain.handle('zm-llm-generate', async (_e, req: LlmCall) => {
+    const clean: LlmCall = {
+      model: String(req?.model ?? '').slice(0, 200), system: String(req?.system ?? '').slice(0, 20000), prompt: String(req?.prompt ?? '').slice(0, 20000),
       json: !!req?.json, maxTokens: Math.max(16, Math.min(16000, Number(req?.maxTokens) || 500)),
     };
-    return fakeLlm ? fakeGemini(clean) : callGemini(clean, loadKey());
+    return fakeLlm ? fakeLlmReply(clean) : callChat(clean, loadEndpoint(), loadKey());
   });
 }
 

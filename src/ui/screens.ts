@@ -20,8 +20,8 @@ import { duelSetup, initDuelScreens, joinDuel } from './duel';
 import { GameView } from './game';
 import { getLang, t, type Lang } from './i18n';
 import { roleIcon } from './icons';
-import { desktopLlm, llmStatus } from './llm';
-import { DEFAULT_RELAY, DEFAULT_RUNNER_MODEL, DEFAULT_WRITER_MODEL, saveSettings, settings } from './settings';
+import { LLM_PRESETS, desktopLlm, llmStatus } from './llm';
+import { DEFAULT_RELAY, saveSettings, settings } from './settings';
 import { Coach, TutorialSession } from './tutorial';
 
 let root: HTMLElement;
@@ -280,7 +280,7 @@ export function menuScreen(): void {
   const menu = el('div.menu', {},
     art,
     rain,
-    el('div.menu-version', {}, 'v0.4.0'),
+    el('div.menu-version', {}, 'v0.5.0'),
     el('div.menu-col', {},
       el('div', {}, el('h1.logo', {}, 'ZERO MARGIN'), el('p.tagline', {}, t('app.tagline'))),
       el('nav.menu-list', {},
@@ -730,7 +730,7 @@ function settingsScreen(): void {
   )));
 }
 
-/** The optional language-model game master: your own key, kept by the desktop app and never shown again. */
+/** The optional language-model game master: any OpenAI-compatible server, with a key the page never sees again. */
 function gmSettings(): HTMLElement {
   const box = el('div.gm-settings');
   const msg = el('p.form-msg');
@@ -740,41 +740,53 @@ function gmSettings(): HTMLElement {
       box.replaceChildren(el('h3', {}, t('gm.title')), el('p.muted.small', {}, t('gm.desktopOnly')));
       return;
     }
+    const endpoint = el('input', { value: status.endpoint, spellcheck: 'false', placeholder: 'https://api.example.com/v1' }) as HTMLInputElement;
     const key = el('input', { type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: status.hasKey ? t('gm.keySaved') : t('gm.keyPlaceholder') }) as HTMLInputElement;
-    const saveKey = async () => {
-      if (!key.value.trim()) return;
-      const res = await window.zmDesktop!.llmSetKey(key.value.trim());
+    const presets = selectEl<string>('', [{ value: '', label: t('gm.preset') }, ...LLM_PRESETS.map((p) => ({ value: p.url, label: p.label }))], (url) => { if (url) endpoint.value = url; });
+    const save = async () => {
+      const res = await window.zmDesktop!.llmConfigure({ endpoint: endpoint.value, key: key.value });
+      if (!res.ok) {
+        msg.textContent = t('gm.badEndpoint');
+        return;
+      }
       await render();
       msg.textContent = res.saved ? t('gm.saved') : t('gm.notSaved');
     };
-    const model = (label: string, value: string, fallback: string, set: (v: string) => void) => field(label, el('input', {
-      value, spellcheck: 'false', onchange: (e: Event) => { set((e.target as HTMLInputElement).value.trim() || fallback); saveSettings(); },
+    const model = (cls: string, label: string, value: string, set: (v: string) => void) => field(label, el(`input.${cls}`, {
+      value, spellcheck: 'false', onchange: (e: Event) => { set((e.target as HTMLInputElement).value.trim()); saveSettings(); },
     }));
     box.replaceChildren(
       el('h3', {}, t('gm.title')),
       el('p.muted.small', {}, t('gm.intro')),
       field(t('gm.enable'), selectEl(settings.gmEnabled ? 'on' : 'off', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], (v) => { settings.gmEnabled = v === 'on'; saveSettings(); })),
+      field(t('gm.endpoint'), endpoint),
+      presets,
       field(t('gm.key'), key),
+      el('p.muted.small', {}, t('gm.keyHint')),
       el('div.modal-actions.tight', {},
-        el('button.btn-quiet', { onclick: saveKey }, t('gm.saveKey')),
-        status.hasKey ? el('button.btn-quiet', {
+        el('button.btn-quiet', { onclick: save }, t('gm.save')),
+        status.endpoint ? el('button.btn-quiet', {
           onclick: async () => {
+            if (!settings.gmRunnerModel.trim()) {
+              msg.textContent = t('gm.needModels');
+              return;
+            }
             msg.textContent = t('gm.testing');
             const reply = await desktopLlm()!.generate({ tier: 'runner', system: 'Reply with one short word.', prompt: 'Say ready.', json: false, maxTokens: 50 });
             msg.textContent = reply.ok ? t('gm.testOk') : t(`camp.llmFail.${reply.reason}`);
           },
         }, t('gm.test')) : null,
-        status.hasKey ? el('button.btn-quiet', {
+        status.endpoint ? el('button.btn-quiet', {
           onclick: async () => {
-            await window.zmDesktop!.llmSetKey('');
+            await window.zmDesktop!.llmConfigure({ endpoint: '', key: '' });
             await render();
             msg.textContent = t('gm.removed');
           },
-        }, t('gm.removeKey')) : null,
+        }, t('gm.remove')) : null,
       ),
       msg,
-      model(t('gm.writer'), settings.gmWriterModel, DEFAULT_WRITER_MODEL, (v) => { settings.gmWriterModel = v; }),
-      model(t('gm.runner'), settings.gmRunnerModel, DEFAULT_RUNNER_MODEL, (v) => { settings.gmRunnerModel = v; }),
+      model('gm-writer', t('gm.writer'), settings.gmWriterModel, (v) => { settings.gmWriterModel = v; }),
+      model('gm-runner', t('gm.runner'), settings.gmRunnerModel, (v) => { settings.gmRunnerModel = v; }),
       el('p.muted.small', {}, t('gm.terms')),
     );
   };

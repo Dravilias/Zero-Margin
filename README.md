@@ -8,7 +8,7 @@ The game has three modes:
 - **Story campaign:** run a crew from job to job through a story with choices and endings, or keep going on an endless job board.
 - **Card duel:** a hacker tries to crack a corporation's network while the corporation hunts them down.
 
-> **Status: early (v0.4.0).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
+> **Status: early (v0.5.0).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
 
 ## Getting started
 
@@ -21,7 +21,7 @@ npm install
 npm start
 ```
 
-You need a recent version of Node.js. To try the game in a browser without the desktop app, run `npm run dev` and open <http://localhost:5199>. The Gemini game master only works in the desktop app.
+You need a recent version of Node.js. To try the game in a browser without the desktop app, run `npm run dev` and open <http://localhost:5199>. The language-model game master only works in the desktop app.
 
 New to the game? Start with the tutorial in the main menu, which takes about 5 minutes.
 
@@ -45,7 +45,7 @@ There are three sources of story:
 | --- | --- |
 | **New contract** | A four-chapter story assembled from written pieces, different every time |
 | **The Note** | A hand-written five-chapter story with three endings |
-| **Written by Gemini** | A new story written by a language model, using your own API key |
+| **Written by a language model** | A new story from a model you connect |
 
 When a story ends, the same crew can take on another one or move to the endless job board. A friend can also take the game master's seat to run the enemy, call in reinforcements, narrate and trigger events between jobs.
 
@@ -65,16 +65,28 @@ Every mode has three settings, chosen when you start a game:
 
 In the card duel, depth sets the card pool, node strength and game length instead.
 
-## Optional Gemini game master
+## Optional language-model game master
 
-The whole game works without a language model. If you want one, add your own [Gemini API](https://ai.google.dev/) key in Settings. Only the host needs a key.
+The whole game works without a language model. To use one, open Settings and enter the address of any server with an OpenAI-compatible chat API, plus an API key if it needs one. Only the host has to set this up.
 
-- A stronger model (default `gemini-3.8-flash`) writes new stories and is called once per story.
-- A cheaper model (default `gemini-3.5-flash-lite`) narrates scenes and judges actions players type in themselves.
+| Server | Address |
+| --- | --- |
+| OpenAI | `https://api.openai.com/v1` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| Ollama (local) | `http://localhost:11434/v1` |
+| LM Studio (local) | `http://localhost:1234/v1` |
 
-You can change both model names in Settings. Rules, dice, money and combat always stay in the game engine. Model output is checked before use, and the game falls back to its written text if a call fails or your quota runs out.
+You also choose two models, by the name your server uses:
 
-The key is stored encrypted by the desktop app and is never passed to the game's page. On a system without secure key storage, it's kept only until the game closes. Scene text and crew names are sent to Google under your key, so Google's terms and prices apply. Check them before use, especially for the free tier in the EEA, Switzerland and the UK.
+- A **writer** model writes new stories and is called once per story, so a stronger model pays off here.
+- A **game master** model narrates scenes and judges actions players type in themselves. It's called often, so a cheaper or faster one makes sense.
+
+Rules, dice, money and combat always stay in the game engine. Model output is checked before use, and the game falls back to its written text if a call fails or a limit runs out.
+
+The key is stored encrypted by the desktop app, is never passed to the game's page, and is forgotten if you change the server address. On a system without secure key storage, it's kept only until the game closes. Plain `http://` addresses are only accepted on your own PC or local network.
+
+Scene text and crew names are sent to the server you choose, so that provider's terms and prices apply. A model running on your own PC keeps them there.
 
 ## Online play
 
@@ -114,9 +126,9 @@ npx esbuild scripts/sim.ts --bundle --platform=node --outfile=/tmp/zm-sim.cjs &&
 | Path | Purpose |
 | --- | --- |
 | `src/engine/` | Rules for all three modes, as pure functions with no interface code |
-| `src/net/` | Relay client, local and online sessions, saves and the Gemini prompts |
+| `src/net/` | Relay client, local and online sessions, saves and the game master prompts |
 | `src/ui/` | Screens, board and dice rendering, synthesized sound and translations |
-| `electron/` | The desktop app, including Gemini calls and key storage |
+| `electron/` | The desktop app, including model server calls and key storage |
 | `relay/` | The join-code relay, a small Node server packaged for Docker |
 | `tests/` | Rules, computer players, online play, translations and the tutorial |
 | `scripts/` | Balance simulator, tutorial seed finder, icon generator and a test client |
@@ -129,13 +141,13 @@ Game state is plain JSON, with its random number generator stored inside it, so 
 
 Setting `ZM_SMOKE_TEST=1` makes the desktop app run a check using a throwaway profile, then report the result and exit. Add one of these for a different check:
 
-- `ZM_SMOKE_CAMPAIGN=1` plays through a campaign against a pretend Gemini, with no key or network needed.
+- `ZM_SMOKE_CAMPAIGN=1` plays through a campaign against a pretend model server, with no key or network needed.
 - `ZM_SMOKE_ONLINE=1` hosts an online table, which `scripts/remote-guest.ts` can join from another machine.
 
 ## Known limitations
 
 - **Balance:** faction win rates vary widely by scenario and rule depth, and campaign prices and difficulty are estimates.
-- **Gemini:** the integration has only been tested against a simulated API, not the real service.
+- **Language models:** the integration has only been tested against simulated responses, not a real server.
 - **Windows:** builds since v0.1.0 haven't been run on Windows.
 - **Online play:** the game hasn't been tested with players on separate networks.
 - **Card duel:** online players receive the full game state, so a modified client could see the opponent's hand.

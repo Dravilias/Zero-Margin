@@ -20,7 +20,7 @@ import { copyText, el, selectEl } from './dom';
 import type { GameView } from './game';
 import { getLang, t, tx } from './i18n';
 import { roleIcon } from './icons';
-import { desktopLlm, llmStatus } from './llm';
+import { desktopLlm, llmReady as checkLlmReady } from './llm';
 import { settings } from './settings';
 
 /** What this file needs from the main screen code; passed in so the two don't reach into each other. */
@@ -129,8 +129,7 @@ const hostOptions = (relay: RelayClient | null) => ({
 type StorySource = 'generated' | 'note' | 'llm';
 
 async function newCampaignScreen(): Promise<void> {
-  const status = await llmStatus();
-  const llmReady = status.hasKey && settings.gmEnabled;
+  const llmReady = await checkLlmReady();
   const seed = randomSeed();
   let mode: CampaignMode = 'story';
   let source: StorySource = llmReady ? 'llm' : 'generated';

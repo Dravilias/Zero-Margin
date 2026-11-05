@@ -1,5 +1,7 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { callGemini, readReply } from '../electron/gemini';
+import { callChat, normalizeEndpoint, readReply } from '../electron/llm';
 import { applyCampaign, availableGigs, createCampaign, nodeOf, starterCrew, END, type CampaignState } from '../src/engine/campaign';
 import { CampaignHost } from '../src/net/campaignNet';
 import { isCleanText, parseJudgement, planToArc, usableNarration, writeArc, type LlmReply, type LlmRequest, type LlmTransport } from '../src/net/gm';
@@ -171,48 +173,88 @@ describe('the game master during play', () => {
   });
 });
 
-describe('calling Gemini', () => {
-  const req = { model: 'gemini-3.5-flash-lite', system: 'sys', prompt: 'hello', json: true, maxTokens: 100 };
+describe('calling an OpenAI-compatible server', () => {
+  const req = { model: 'some/model:8b', system: 'sys', prompt: 'hello', json: true, maxTokens: 100 };
+  const base = 'https://api.example.com/v1';
   const response = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-  const okBody = { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'thinking...', thought: true }, { text: 'answer' }] } }] };
+  const okBody = { choices: [{ finish_reason: 'stop', message: { content: '<think>hmm</think> answer' } }] };
 
-  it('sends the documented request, with the key only in the header', async () => {
+  it('sends a standard chat request, with the key only in the header', async () => {
     let url = '';
     let init: RequestInit = {};
-    const res = await callGemini(req, 'SECRET', (async (u: string, i: RequestInit) => { url = u; init = i; return response(200, okBody); }) as typeof fetch);
+    const res = await callChat(req, `${base}/`, 'SECRET', (async (u: string, i: RequestInit) => { url = u; init = i; return response(200, okBody); }) as typeof fetch);
     expect(res).toEqual({ ok: true, text: 'answer' });
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
-    expect(url).not.toContain('SECRET');
-    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('SECRET');
+    expect(url).toBe(`${base}/chat/completions`);
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer SECRET');
+    expect(init.redirect).toBe('error');
     const body = JSON.parse(String(init.body));
-    expect(body.contents[0].parts[0].text).toBe('hello');
-    expect(body.systemInstruction.parts[0].text).toBe('sys');
-    expect(body.generationConfig.maxOutputTokens).toBe(100);
-    expect(body.generationConfig.responseMimeType).toBe('application/json');
+    expect(body.model).toBe('some/model:8b');
+    expect(body.messages).toEqual([{ role: 'system', content: 'sys' }, { role: 'user', content: 'hello' }]);
+    expect(body.max_tokens).toBe(100);
+    expect(body.response_format).toEqual({ type: 'json_object' });
     expect(String(init.body)).not.toContain('SECRET');
+  });
+
+  it('works with a local server that needs no key', async () => {
+    let init: RequestInit = {};
+    await callChat(req, 'http://localhost:11434/v1', '', (async (_u: string, i: RequestInit) => { init = i; return response(200, okBody); }) as unknown as typeof fetch);
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it('only accepts addresses that keep a key safe', () => {
+    expect(normalizeEndpoint('https://api.example.com/v1/chat/completions')).toBe(base);
+    expect(normalizeEndpoint('http://localhost:1234/v1/')).toBe('http://localhost:1234/v1');
+    expect(normalizeEndpoint('http://192.168.1.20:8000/v1')).toBe('http://192.168.1.20:8000/v1');
+    expect(normalizeEndpoint('http://[::1]:8000/v1')).toBe('http://[::1]:8000/v1');
+    expect(normalizeEndpoint('http://api.example.com/v1')).toBeNull();
+    expect(normalizeEndpoint('file:///etc/passwd')).toBeNull();
+    expect(normalizeEndpoint('https://user:pw@example.com/v1')).toBeNull();
+    expect(normalizeEndpoint('not a url')).toBeNull();
+  });
+
+  it('talks to a real HTTP server over the network', async () => {
+    const seen: { auth?: string; url?: string; model?: string } = {};
+    const server = createServer((q, r) => {
+      let raw = '';
+      q.on('data', (d) => { raw += d; });
+      q.on('end', () => {
+        Object.assign(seen, { auth: q.headers.authorization, url: q.url, model: JSON.parse(raw).model });
+        r.setHeader('Content-Type', 'application/json');
+        r.end(JSON.stringify(okBody));
+      });
+    });
+    await new Promise<void>((res) => server.listen(0, '127.0.0.1', res));
+    const { port } = server.address() as AddressInfo;
+    const res = await callChat(req, `http://127.0.0.1:${port}/v1`, 'k');
+    server.close();
+    expect(res).toEqual({ ok: true, text: 'answer' });
+    expect(seen).toEqual({ auth: 'Bearer k', url: '/v1/chat/completions', model: 'some/model:8b' });
   });
 
   it('tells apart the ways it can fail', async () => {
     const once = (status: number, body: unknown = {}) => (async () => response(status, body)) as unknown as typeof fetch;
-    expect(await callGemini(req, '', once(200))).toEqual({ ok: false, reason: 'nokey' });
-    expect((await callGemini(req, 'k', once(429))).ok).toBe(false);
-    expect(await callGemini(req, 'k', once(429))).toEqual({ ok: false, reason: 'quota' });
-    expect(await callGemini(req, 'k', once(403))).toEqual({ ok: false, reason: 'badkey' });
-    expect(await callGemini({ ...req, model: '../../etc' }, 'k', once(200))).toMatchObject({ ok: false, reason: 'error' });
-    expect(await callGemini(req, 'k', (async () => { throw new Error('down'); }) as unknown as typeof fetch)).toEqual({ ok: false, reason: 'network' });
-    expect(readReply({ promptFeedback: { blockReason: 'SAFETY' } })).toMatchObject({ ok: false, reason: 'blocked' });
-    expect(readReply({ candidates: [{ finishReason: 'PROHIBITED_CONTENT', content: { parts: [] } }] })).toMatchObject({ ok: false, reason: 'blocked' });
-    expect(readReply({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: 'half a sen' }] } }] })).toEqual({ ok: true, text: 'half a sen' });
+    expect(await callChat(req, '', 'k', once(200))).toEqual({ ok: false, reason: 'nokey' });
+    expect(await callChat({ ...req, model: ' ' }, base, 'k', once(200))).toEqual({ ok: false, reason: 'nokey' });
+    expect(await callChat(req, base, 'k', once(429))).toEqual({ ok: false, reason: 'quota' });
+    expect(await callChat(req, base, 'k', once(401))).toEqual({ ok: false, reason: 'badkey' });
+    expect(await callChat(req, base, 'k', once(404))).toEqual({ ok: false, reason: 'notfound' });
+    expect(await callChat(req, base, 'k', (async () => { throw new Error('down'); }) as unknown as typeof fetch)).toEqual({ ok: false, reason: 'network' });
+    expect(readReply({ choices: [{ finish_reason: 'content_filter', message: { content: '' } }] })).toMatchObject({ ok: false, reason: 'blocked' });
+    expect(readReply({ choices: [{ message: { content: 'x', refusal: 'no' } }] })).toMatchObject({ ok: false, reason: 'blocked' });
+    expect(readReply({ choices: [{ finish_reason: 'length', message: { content: 'half a sen' } }] })).toEqual({ ok: true, text: 'half a sen' });
+    expect(readReply({ choices: [{ message: { content: [{ type: 'text', text: 'parts' }] } }] })).toEqual({ ok: true, text: 'parts' });
+    expect(readReply({})).toMatchObject({ ok: false, reason: 'error' });
   });
 
-  it('retries without the thinking setting if a model rejects it', async () => {
-    const bodies: string[] = [];
-    const res = await callGemini(req, 'k', (async (_u: string, i: RequestInit) => {
-      bodies.push(String(i.body));
-      return bodies.length === 1 ? response(400, {}) : response(200, okBody);
+  it('retries with other request forms when a server rejects one', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const res = await callChat(req, base, 'k', (async (_u: string, i: RequestInit) => {
+      bodies.push(JSON.parse(String(i.body)));
+      return bodies.length < 3 ? response(400, {}) : response(200, okBody);
     }) as unknown as typeof fetch);
     expect(res.ok).toBe(true);
-    expect(bodies[0]).toContain('thinkingConfig');
-    expect(bodies[1]).not.toContain('thinkingConfig');
+    expect(bodies[1].max_completion_tokens).toBe(100);
+    expect(bodies[2].response_format).toBeUndefined();
+    expect(bodies[2].max_tokens).toBe(100);
   });
 });

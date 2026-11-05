@@ -8,13 +8,13 @@ import path from 'node:path';
  *   ZM_SMOKE_OUT=path  also append results to this file
  *   ZM_SMOKE_HOLD=ms   keep the window open afterwards, for screenshots
  *   ZM_SMOKE_ONLINE=1  host a real online table and play to round 3 with whoever joins
- *   ZM_SMOKE_CAMPAIGN=1  play a campaign start to finish of one job, against a pretend Gemini
+ *   ZM_SMOKE_CAMPAIGN=1  play a campaign start to finish of one job, against a pretend model server
  *   ZM_SMOKE_SHOTS=dir   save screenshots of the campaign screens there
  * Every run uses a throwaway profile, so it can't touch real settings or saves.
  */
 
-/** What a pretend Gemini answers in the campaign check, so the whole path runs without a key or any network. */
-export function fakeGemini(req: { system: string; json: boolean }): { ok: true; text: string } {
+/** What a pretend model answers in the campaign check, so the whole path runs without a key or any network. */
+export function fakeLlmReply(req: { system: string; json: boolean }): { ok: true; text: string } {
   if (req.system.includes('campaign outlines')) {
     const chapter = (n: number) => ({
       speaker: 'Clerk Oda',
@@ -130,6 +130,15 @@ const CAMPAIGN_CHECK = `
     try {
     await document.fonts.ready;
     await wait(400);
+    button(/Settings|Ustawienia/).click();
+    if (!await until(() => document.querySelector('.gm-writer'))) return fail('no model settings');
+    for (const [q, value] of [['.gm-writer', 'smoke-writer'], ['.gm-runner', 'smoke-runner']]) {
+      const field = document.querySelector(q);
+      field.value = value;
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    button(/Back|Wstecz/).click();
+    await wait(300);
     button(/Story campaign|Kampania fabularna/).click();
     await wait(200);
     button(/New campaign|Nowa kampania/).click();
@@ -187,10 +196,10 @@ const CAMPAIGN_CHECK = `
     button(/Settings|Ustawienia/).click();
     await wait(500);
     await shot('settings');
-    const keyResult = await window.zmDesktop.llmSetKey('smoke-test-key');
+    const keyResult = await window.zmDesktop.llmConfigure({ endpoint: 'http://localhost:9/v1', key: 'smoke-test-key' });
     return {
       passed: true, title, freeLines: lines, crewInBattle, keyResult, keyReachesPage: JSON.stringify(await window.zmDesktop.llmStatus()).includes('smoke-test-key'),
-      writerModel: [...document.querySelectorAll('input')].map((i) => i.value).filter((v) => v.startsWith('gemini')),
+      writerModel: [...document.querySelectorAll('input')].map((i) => i.value).filter((v) => v.startsWith('smoke-')),
     };
     } catch (e) {
       return fail(String(e) + ' ' + (e.stack || ''));
@@ -238,7 +247,7 @@ export function runSmoke(win: BrowserWindow): void {
     }
     let keyOnDisk = 'none';
     try {
-      keyOnDisk = readFileSync(path.join(app.getPath('userData'), 'gemini.key')).includes('smoke-test-key') ? 'PLAINTEXT' : 'encrypted';
+      keyOnDisk = readFileSync(path.join(app.getPath('userData'), 'llm.key')).includes('smoke-test-key') ? 'PLAINTEXT' : 'encrypted';
     } catch { /* no key was saved in this run */ }
     report(`SMOKE ${JSON.stringify({ ...result, keyOnDisk, errors })}`);
     setTimeout(() => app.exit(result.passed && errors.length === 0 ? 0 : 1), hold);
