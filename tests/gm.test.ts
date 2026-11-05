@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { callChat, normalizeEndpoint, readReply } from '../electron/llm';
+import { callChat, callWithFallbacks, normalizeEndpoint, readReply } from '../electron/llm';
 import { applyCampaign, availableGigs, createCampaign, nodeOf, starterCrew, END, type CampaignState } from '../src/engine/campaign';
 import { CampaignHost } from '../src/net/campaignNet';
 import { isCleanText, parseJudgement, planToArc, usableNarration, writeArc, type LlmReply, type LlmRequest, type LlmTransport } from '../src/net/gm';
@@ -244,6 +244,31 @@ describe('calling an OpenAI-compatible server', () => {
     expect(readReply({ choices: [{ finish_reason: 'length', message: { content: 'half a sen' } }] })).toEqual({ ok: true, text: 'half a sen' });
     expect(readReply({ choices: [{ message: { content: [{ type: 'text', text: 'parts' }] } }] })).toEqual({ ok: true, text: 'parts' });
     expect(readReply({})).toMatchObject({ ok: false, reason: 'error' });
+  });
+
+  it('moves on to fallback servers in order, each with its own key and model', async () => {
+    const servers = [
+      { endpoint: 'https://one.example/v1', key: 'K1', writer: 'w1', runner: 'r1' },
+      { endpoint: 'https://two.example/v1', key: 'K2', writer: 'w2', runner: '' },
+      { endpoint: 'https://three.example/v1', key: 'K3', writer: 'w3', runner: 'r3' },
+    ];
+    const calls: { url: string; auth: string; model: string }[] = [];
+    const fetcher = (fail: string[]) => (async (u: string, i: RequestInit) => {
+      calls.push({ url: u, auth: (i.headers as Record<string, string>).Authorization, model: JSON.parse(String(i.body)).model });
+      return fail.some((f) => u.includes(f)) ? response(429, {}) : response(200, okBody);
+    }) as unknown as typeof fetch;
+    const call = { tier: 'runner' as const, system: 's', prompt: 'p', json: false, maxTokens: 10 };
+    expect(await callWithFallbacks(call, servers, fetcher(['one']))).toEqual({ ok: true, text: 'answer' });
+    // The second server has no game master model, so it's skipped.
+    expect(calls).toEqual([
+      { url: 'https://one.example/v1/chat/completions', auth: 'Bearer K1', model: 'r1' },
+      { url: 'https://three.example/v1/chat/completions', auth: 'Bearer K3', model: 'r3' },
+    ]);
+    calls.length = 0;
+    expect(await callWithFallbacks({ ...call, tier: 'writer' }, servers, fetcher([]))).toEqual({ ok: true, text: 'answer' });
+    expect(calls.map((c) => c.model)).toEqual(['w1']);
+    expect(await callWithFallbacks(call, servers, fetcher(['one', 'three']))).toEqual({ ok: false, reason: 'quota' });
+    expect(await callWithFallbacks(call, [], fetcher([]))).toEqual({ ok: false, reason: 'nokey' });
   });
 
   it('retries with other request forms when a server rejects one', async () => {

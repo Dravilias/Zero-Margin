@@ -130,15 +130,7 @@ const CAMPAIGN_CHECK = `
     try {
     await document.fonts.ready;
     await wait(400);
-    button(/Settings|Ustawienia/).click();
-    if (!await until(() => document.querySelector('.gm-writer'))) return fail('no model settings');
-    for (const [q, value] of [['.gm-writer', 'smoke-writer'], ['.gm-runner', 'smoke-runner']]) {
-      const field = document.querySelector(q);
-      field.value = value;
-      field.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    button(/Back|Wstecz/).click();
-    await wait(300);
+    await window.zmDesktop.llmConfigure([{ endpoint: 'http://localhost:9/v1', key: '', writer: 'smoke-writer', runner: 'smoke-runner' }]);
     button(/Story campaign|Kampania fabularna/).click();
     await wait(200);
     button(/New campaign|Nowa kampania/).click();
@@ -196,7 +188,7 @@ const CAMPAIGN_CHECK = `
     button(/Settings|Ustawienia/).click();
     await wait(500);
     await shot('settings');
-    const keyResult = await window.zmDesktop.llmConfigure({ endpoint: 'http://localhost:9/v1', key: 'smoke-test-key' });
+    const keyResult = await window.zmDesktop.llmConfigure([{ endpoint: 'http://localhost:9/v1', key: 'smoke-test-key', writer: 'smoke-writer', runner: 'smoke-runner' }]);
     return {
       passed: true, title, freeLines: lines, crewInBattle, keyResult, keyReachesPage: JSON.stringify(await window.zmDesktop.llmStatus()).includes('smoke-test-key'),
       writerModel: [...document.querySelectorAll('input')].map((i) => i.value).filter((v) => v.startsWith('smoke-')),

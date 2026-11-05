@@ -8,7 +8,7 @@ The game has three modes:
 - **Story campaign:** run a crew from job to job through a story with choices and endings, or keep going on an endless job board.
 - **Card duel:** a hacker tries to crack a corporation's network while the corporation hunts them down.
 
-> **Status: early (v0.5.0).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
+> **Status: early (v0.6.0).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
 
 ## Getting started
 
@@ -67,9 +67,9 @@ In the card duel, depth sets the card pool, node strength and game length instea
 
 ## Optional language-model game master
 
-The whole game works without a language model. To use one, open Settings and enter the address of any server with an OpenAI-compatible chat API, plus an API key if it needs one. Only the host has to set this up.
+The whole game works without a language model. To use one, open Settings and type in the endpoint of any server with an OpenAI-compatible chat API, plus an API key if it needs one. Only the host has to set this up. For example:
 
-| Server | Address |
+| Server | Endpoint |
 | --- | --- |
 | OpenAI | `https://api.openai.com/v1` |
 | OpenRouter | `https://openrouter.ai/api/v1` |
@@ -77,16 +77,18 @@ The whole game works without a language model. To use one, open Settings and ent
 | Ollama (local) | `http://localhost:11434/v1` |
 | LM Studio (local) | `http://localhost:1234/v1` |
 
-You also choose two models, by the name your server uses:
+You also set two models, by the name your server uses:
 
 - A **writer** model writes new stories and is called once per story, so a stronger model pays off here.
 - A **game master** model narrates scenes and judges actions players type in themselves. It's called often, so a cheaper or faster one makes sense.
 
-Rules, dice, money and combat always stay in the game engine. Model output is checked before use, and the game falls back to its written text if a call fails or a limit runs out.
+You can also add 1 or 3 **fallback servers**, each with its own endpoint, key and models. If a server fails, the game tries the next one in order.
 
-The key is stored encrypted by the desktop app, is never passed to the game's page, and is forgotten if you change the server address. On a system without secure key storage, it's kept only until the game closes. Plain `http://` addresses are only accepted on your own PC or local network.
+Rules, dice, money and combat always stay in the game engine. Model output is checked before use, and the game falls back to its written text if every server fails.
 
-Scene text and crew names are sent to the server you choose, so that provider's terms and prices apply. A model running on your own PC keeps them there.
+The key is stored encrypted by the desktop app, is never passed to the game's page, and is forgotten if you change that server's endpoint. On a system without secure key storage, it's kept only until the game closes. Plain `http://` addresses are only accepted on your own PC or local network.
+
+Scene text and crew names are sent to the servers you choose, so each provider's terms and prices apply. A model running on your own PC keeps them there.
 
 ## Online play
 

@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, ipcMain, safeStorage, session, shell } from '
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { callChat, normalizeEndpoint, type LlmCall } from './llm';
+import { callChat, callWithFallbacks, normalizeEndpoint, type LlmServer, type LlmTierCall } from './llm';
 import { fakeLlmReply, runSmoke } from './smoke';
 
 const smokeTest = process.env.ZM_SMOKE_TEST === '1';
@@ -46,12 +46,12 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-/* ---------- The model server: the key is encrypted here, tied to one address, and never handed back to the page ---------- */
+/* ---------- Model servers: keys are encrypted here, each tied to one address, and never handed back to the page ---------- */
 
 const keyFile = () => path.join(app.getPath('userData'), 'llm.key');
-const endpointFile = () => path.join(app.getPath('userData'), 'llm-endpoint.txt');
-let keyInMemory = '';
-let endpointInMemory = '';
+const configFile = () => path.join(app.getPath('userData'), 'llm.json');
+const MAX_SERVERS = 4;
+let servers: LlmServer[] | null = null;
 
 /** Linux without a keyring falls back to a hard-coded password, which isn't really encryption. */
 function canEncrypt(): boolean {
@@ -59,55 +59,66 @@ function canEncrypt(): boolean {
   return process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text';
 }
 
-function loadEndpoint(): string {
-  if (endpointInMemory) return endpointInMemory;
+function loadServers(): LlmServer[] {
+  if (servers) return servers;
+  servers = [];
   try {
-    endpointInMemory = normalizeEndpoint(fs.readFileSync(endpointFile(), 'utf8')) ?? '';
+    const saved = JSON.parse(fs.readFileSync(configFile(), 'utf8')) as Omit<LlmServer, 'key'>[];
+    let keys: string[] = [];
+    try {
+      if (canEncrypt()) keys = JSON.parse(safeStorage.decryptString(fs.readFileSync(keyFile()))) as string[];
+    } catch { /* no saved keys, or they can't be read on this machine */ }
+    servers = saved.slice(0, MAX_SERVERS).map((c, i) => ({ endpoint: normalizeEndpoint(c.endpoint) ?? '', writer: String(c.writer ?? ''), runner: String(c.runner ?? ''), key: String(keys[i] ?? '') }));
   } catch { /* nothing configured yet */ }
-  return endpointInMemory;
+  return servers;
 }
 
-function loadKey(): string {
-  if (keyInMemory) return keyInMemory;
-  try {
-    if (canEncrypt()) keyInMemory = safeStorage.decryptString(fs.readFileSync(keyFile()));
-  } catch { /* no saved key yet, or it can't be read on this machine */ }
-  return keyInMemory;
-}
+type ServerInput = { endpoint?: unknown; key?: unknown; writer?: unknown; runner?: unknown };
 
-/** Changing the address without giving a new key forgets the old one, so a key can't be sent to a server it wasn't entered for. */
-function configure(rawEndpoint: string, newKey: string): { ok: boolean; saved: boolean } {
-  const endpoint = rawEndpoint.trim() ? normalizeEndpoint(rawEndpoint) : '';
-  if (endpoint === null) return { ok: false, saved: false };
-  const moved = endpoint !== loadEndpoint();
-  const key = newKey.trim() || (moved ? '' : loadKey());
-  endpointInMemory = endpoint;
-  keyInMemory = key;
-  let saved = false;
+/** Changing a server's address without giving a new key forgets the old one, so a key can't go to a server it wasn't entered for. */
+function configure(input: ServerInput[]): { ok: boolean; badServer?: number; saved: boolean } {
+  const old = loadServers();
+  const next: LlmServer[] = [];
+  for (const [i, c] of input.slice(0, MAX_SERVERS).entries()) {
+    const raw = String(c?.endpoint ?? '').slice(0, 300).trim();
+    const endpoint = raw ? normalizeEndpoint(raw) : '';
+    if (endpoint === null) return { ok: false, badServer: i, saved: false };
+    const typed = String(c?.key ?? '').slice(0, 500).trim();
+    const kept = old[i]?.endpoint === endpoint ? old[i].key : '';
+    next.push({ endpoint, key: endpoint ? typed || kept : '', writer: String(c?.writer ?? '').slice(0, 200).trim(), runner: String(c?.runner ?? '').slice(0, 200).trim() });
+  }
+  servers = next;
+  const anyKey = next.some((s) => s.key);
+  let saved = !anyKey;
   try {
-    if (endpoint) fs.writeFileSync(endpointFile(), endpoint);
-    else fs.rmSync(endpointFile(), { force: true });
-    if (key && canEncrypt()) {
-      fs.writeFileSync(keyFile(), safeStorage.encryptString(key), { mode: 0o600 });
+    fs.writeFileSync(configFile(), JSON.stringify(next.map(({ endpoint, writer, runner }) => ({ endpoint, writer, runner }))));
+    if (anyKey && canEncrypt()) {
+      fs.writeFileSync(keyFile(), safeStorage.encryptString(JSON.stringify(next.map((s) => s.key))), { mode: 0o600 });
       saved = true;
     } else fs.rmSync(keyFile(), { force: true });
   } catch { /* it still works until the game closes */ }
-  return { ok: true, saved: saved || !key };
+  return { ok: true, saved };
 }
 
 function registerLlm(): void {
   ipcMain.handle('zm-llm-status', () => ({
-    endpoint: fakeLlm ? 'http://localhost:9/v1' : loadEndpoint(), hasKey: !!loadKey(), canSave: canEncrypt(),
+    servers: loadServers().map(({ endpoint, writer, runner, key }) => ({ endpoint, writer, runner, hasKey: !!key })), canSave: canEncrypt(),
   }));
-  ipcMain.handle('zm-llm-configure', (_e, cfg: { endpoint?: unknown; key?: unknown }) =>
-    configure(String(cfg?.endpoint ?? '').slice(0, 300), String(cfg?.key ?? '').slice(0, 500)));
-  ipcMain.handle('zm-llm-generate', async (_e, req: LlmCall) => {
-    const clean: LlmCall = {
-      model: String(req?.model ?? '').slice(0, 200), system: String(req?.system ?? '').slice(0, 20000), prompt: String(req?.prompt ?? '').slice(0, 20000),
+  ipcMain.handle('zm-llm-configure', (_e, input: unknown) => configure(Array.isArray(input) ? input as ServerInput[] : []));
+  ipcMain.handle('zm-llm-generate', async (_e, req: LlmTierCall) => {
+    const clean: LlmTierCall = {
+      tier: req?.tier === 'writer' ? 'writer' : 'runner', system: String(req?.system ?? '').slice(0, 20000), prompt: String(req?.prompt ?? '').slice(0, 20000),
       json: !!req?.json, maxTokens: Math.max(16, Math.min(16000, Number(req?.maxTokens) || 500)),
     };
-    return fakeLlm ? fakeLlmReply(clean) : callChat(clean, loadEndpoint(), loadKey());
+    return fakeLlm ? fakeLlmReply(clean) : callWithFallbacks(clean, loadServers());
   });
+  // Tries every configured server on its own, so a bad fallback doesn't hide behind a good main server.
+  ipcMain.handle('zm-llm-test', () => Promise.all(loadServers().map(async (s) => {
+    if (!s.endpoint) return null;
+    const model = s.runner || s.writer;
+    if (!model) return { ok: false, reason: 'nokey' };
+    return callChat({ model, system: 'Reply with one short word.', prompt: 'Say ready.', json: false, maxTokens: 50 }, s.endpoint, s.key);
+  })));
 }
 
 app.whenReady().then(() => {

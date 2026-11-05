@@ -520,3 +520,4 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .duel-card .pick-desc { font-size: 13.5px; }
 .duel-side { display: flex; flex-direction: column; gap: 6px; }
 .duel-log { flex: 1; font-size: 14px; color: var(--ink-2); line-height: 1.2; user-select: text; }
+.gm-server { display: flex; flex-direction: column; gap: 7px; border: 1px solid var(--line); padding: 9px 11px; }

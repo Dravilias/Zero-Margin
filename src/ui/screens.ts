@@ -20,7 +20,7 @@ import { duelSetup, initDuelScreens, joinDuel } from './duel';
 import { GameView } from './game';
 import { getLang, t, type Lang } from './i18n';
 import { roleIcon } from './icons';
-import { LLM_PRESETS, desktopLlm, llmStatus } from './llm';
+import { llmStatus, type LlmServerInput } from './llm';
 import { DEFAULT_RELAY, saveSettings, settings } from './settings';
 import { Coach, TutorialSession } from './tutorial';
 
@@ -280,7 +280,7 @@ export function menuScreen(): void {
   const menu = el('div.menu', {},
     art,
     rain,
-    el('div.menu-version', {}, 'v0.5.0'),
+    el('div.menu-version', {}, 'v0.6.0'),
     el('div.menu-col', {},
       el('div', {}, el('h1.logo', {}, 'ZERO MARGIN'), el('p.tagline', {}, t('app.tagline'))),
       el('nav.menu-list', {},
@@ -730,63 +730,64 @@ function settingsScreen(): void {
   )));
 }
 
-/** The optional language-model game master: any OpenAI-compatible server, with a key the page never sees again. */
+/** The optional language-model game master: any OpenAI-compatible servers, with keys the page never sees again. */
 function gmSettings(): HTMLElement {
   const box = el('div.gm-settings');
   const msg = el('p.form-msg');
+  const FALLBACK_OPTIONS = [0, 1, 3];
+  let drafts: (LlmServerInput & { hasKey: boolean })[] | null = null;
+  let fallbacks = 0;
+
   const render = async () => {
     const status = await llmStatus();
     if (!status.desktop) {
       box.replaceChildren(el('h3', {}, t('gm.title')), el('p.muted.small', {}, t('gm.desktopOnly')));
       return;
     }
-    const endpoint = el('input', { value: status.endpoint, spellcheck: 'false', placeholder: 'https://api.example.com/v1' }) as HTMLInputElement;
-    const key = el('input', { type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: status.hasKey ? t('gm.keySaved') : t('gm.keyPlaceholder') }) as HTMLInputElement;
-    const presets = selectEl<string>('', [{ value: '', label: t('gm.preset') }, ...LLM_PRESETS.map((p) => ({ value: p.url, label: p.label }))], (url) => { if (url) endpoint.value = url; });
+    if (!drafts) {
+      drafts = status.servers.map((s) => ({ endpoint: s.endpoint, key: '', writer: s.writer, runner: s.runner, hasKey: s.hasKey }));
+      fallbacks = FALLBACK_OPTIONS.find((n) => n >= drafts!.length - 1) ?? 3;
+    }
+    while (drafts.length < 1 + fallbacks) drafts.push({ endpoint: '', key: '', writer: '', runner: '', hasKey: false });
+    const list = drafts;
     const save = async () => {
-      const res = await window.zmDesktop!.llmConfigure({ endpoint: endpoint.value, key: key.value });
+      const res = await window.zmDesktop!.llmConfigure(list.slice(0, 1 + fallbacks).map(({ endpoint, key, writer, runner }) => ({ endpoint, key, writer, runner })));
       if (!res.ok) {
-        msg.textContent = t('gm.badEndpoint');
+        msg.textContent = t('gm.badEndpoint', { server: serverName(res.badServer ?? 0) });
         return;
       }
+      drafts = null;
       await render();
       msg.textContent = res.saved ? t('gm.saved') : t('gm.notSaved');
     };
-    const model = (cls: string, label: string, value: string, set: (v: string) => void) => field(label, el(`input.${cls}`, {
-      value, spellcheck: 'false', onchange: (e: Event) => { set((e.target as HTMLInputElement).value.trim()); saveSettings(); },
+    const serverName = (i: number) => (i === 0 ? t('gm.server.main') : t('gm.server.fallback', { n: i }));
+    const input = (label: string, value: string, set: (v: string) => void, attrs: Record<string, string> = {}) => field(label, el('input', {
+      value, spellcheck: 'false', autocomplete: 'off', ...attrs, oninput: (e: Event) => set((e.target as HTMLInputElement).value),
     }));
     box.replaceChildren(
       el('h3', {}, t('gm.title')),
       el('p.muted.small', {}, t('gm.intro')),
       field(t('gm.enable'), selectEl(settings.gmEnabled ? 'on' : 'off', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], (v) => { settings.gmEnabled = v === 'on'; saveSettings(); })),
-      field(t('gm.endpoint'), endpoint),
-      presets,
-      field(t('gm.key'), key),
+      field(t('gm.fallbacks'), selectEl<number>(fallbacks, FALLBACK_OPTIONS.map((n) => ({ value: n, label: n === 0 ? t('gm.fallbacks.none') : String(n) })), (v) => { fallbacks = v; void render(); })),
+      ...list.slice(0, 1 + fallbacks).map((d, i) => el('div.gm-server', {},
+        el('h3', {}, serverName(i)),
+        input(t('gm.endpoint'), d.endpoint, (v) => { d.endpoint = v; }, { placeholder: 'https://api.example.com/v1' }),
+        input(t('gm.key'), d.key, (v) => { d.key = v; }, { type: 'password', placeholder: d.hasKey ? t('gm.keySaved') : t('gm.keyPlaceholder') }),
+        input(t('gm.writer'), d.writer, (v) => { d.writer = v; }),
+        input(t('gm.runner'), d.runner, (v) => { d.runner = v; }),
+      )),
       el('p.muted.small', {}, t('gm.keyHint')),
       el('div.modal-actions.tight', {},
         el('button.btn-quiet', { onclick: save }, t('gm.save')),
-        status.endpoint ? el('button.btn-quiet', {
+        status.servers.some((s) => s.endpoint) ? el('button.btn-quiet', {
           onclick: async () => {
-            if (!settings.gmRunnerModel.trim()) {
-              msg.textContent = t('gm.needModels');
-              return;
-            }
             msg.textContent = t('gm.testing');
-            const reply = await desktopLlm()!.generate({ tier: 'runner', system: 'Reply with one short word.', prompt: 'Say ready.', json: false, maxTokens: 50 });
-            msg.textContent = reply.ok ? t('gm.testOk') : t(`camp.llmFail.${reply.reason}`);
+            const results = await window.zmDesktop!.llmTest();
+            msg.textContent = results.flatMap((r, i) => (r ? [`${serverName(i)}: ${r.ok ? t('gm.testOk') : t(`gm.fail.${r.reason}`)}`] : [])).join(' ');
           },
         }, t('gm.test')) : null,
-        status.endpoint ? el('button.btn-quiet', {
-          onclick: async () => {
-            await window.zmDesktop!.llmConfigure({ endpoint: '', key: '' });
-            await render();
-            msg.textContent = t('gm.removed');
-          },
-        }, t('gm.remove')) : null,
       ),
       msg,
-      model('gm-writer', t('gm.writer'), settings.gmWriterModel, (v) => { settings.gmWriterModel = v; }),
-      model('gm-runner', t('gm.runner'), settings.gmRunnerModel, (v) => { settings.gmRunnerModel = v; }),
       el('p.muted.small', {}, t('gm.terms')),
     );
   };

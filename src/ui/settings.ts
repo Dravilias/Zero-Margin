@@ -10,8 +10,6 @@ export interface Settings {
   tutorialDone: boolean;
   /** Whether new campaigns may use a language-model game master. */
   gmEnabled: boolean;
-  gmWriterModel: string;
-  gmRunnerModel: string;
 }
 
 export const DEFAULT_RELAY = 'wss://relay.dravilias.me';
@@ -23,7 +21,7 @@ function systemLang(): Lang {
 
 const defaults = (): Settings => ({
   lang: systemLang(), name: '', volume: 0.6, speed: 'normal', rain: true, relayUrl: DEFAULT_RELAY, tutorialDone: false,
-  gmEnabled: true, gmWriterModel: '', gmRunnerModel: '',
+  gmEnabled: true,
 });
 
 export const settings: Settings = defaults();
