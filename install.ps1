@@ -1,4 +1,4 @@
-gi# Installs Zero Margin for the current user on Windows. No administrator rights needed.
+g# Installs Zero Margin for the current user on Windows. No administrator rights needed.
 #   powershell -ExecutionPolicy Bypass -File install.ps1             install the newest package in release\
 #   powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall  remove the game (saves and settings are kept)
 param([switch]$Uninstall)
