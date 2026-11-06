@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RelayClient, RelayError } from '../src/net/relayClient';
-import { GuestSession, GuestTable, HostSession, HostTable, setSaveListener, type GameSession } from '../src/net/sessions';
-import { newTable } from '../src/net/table';
+import { GAME_VERSION, GuestSession, GuestTable, HostSession, HostTable, setSaveListener, type GameSession } from '../src/net/sessions';
+import { newTable, startProblems, tableToConfig } from '../src/net/table';
+import { createGame } from '../src/engine/game';
 // @ts-expect-error the relay is plain JavaScript so it can run in a small container
 import { startRelay } from '../relay/server.mjs';
 import { chooseAction } from '../src/engine/ai';
@@ -11,7 +12,8 @@ import { CampaignGuest, CampaignHost, saveCampaign } from '../src/net/campaignNe
 import { DuelGuest, DuelHost } from '../src/net/duelNet';
 
 // Sessions autosave through localStorage, which does not exist under Node.
-(globalThis as any).localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+const stored = new Map<string, string>();
+(globalThis as any).localStorage = { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => { stored.set(k, v); }, removeItem: (k: string) => { stored.delete(k); } };
 
 let relay: any;
 let url: string;
@@ -181,7 +183,7 @@ describe('an online campaign', () => {
     const relayHost = new RelayClient(url);
     await relayHost.create('Host');
     const camp = createCampaign({
-      id: 'o', mode: 'endless', ruleset: 'quick', crewName: 'Berth 9', seed: 21, hostName: 'Host', crew: starterCrew(21), arc: null, llm: false, online: true, gm: 'computer',
+      id: `o${Math.random()}`, mode: 'endless', ruleset: 'quick', crewName: 'Berth 9', seed: 21, hostName: 'Host', crew: starterCrew(21), arc: null, llm: false, online: true, gm: 'computer',
     });
     const host = new CampaignHost(camp, { relay: relayHost, name: 'Host', llm: null, lang: () => 'en', resolve: String });
     const out: CampaignGuest[] = [];
@@ -212,12 +214,15 @@ describe('an online campaign', () => {
     friend.dispatch({ a: 'finishMission', result: { won: true, members: [] } });
     await until(() => rejected === 'hostOnly');
 
-    // Either player can pick the job; everyone goes to the battle.
+    // A guest can't bring the host's character, but the host can bring anyone; everyone goes to the battle.
     let hostSession: any = null;
     let friendSession: any = null;
     host.onMission = (s) => { hostSession = s; };
     friend.onMission = (s) => { friendSession = s; };
     friend.dispatch({ a: 'takeGig', gig: friend.state.offers[0].id, squad: [1, 2] });
+    await wait(100);
+    expect(host.state.phase).toBe('hub');
+    host.dispatch({ a: 'takeGig', gig: host.state.offers[0].id, squad: [1, 2] });
     await until(() => !!hostSession && !!friendSession);
     expect(hostSession.state.owners).toEqual({ s0u0: 'host', s0u1: friend['relay'].peerId });
     expect(hostSession.mayControl('s0u0')).toBe(true);
@@ -294,9 +299,9 @@ describe('an online campaign', () => {
     await r.join(host.code!, 'Friend');
     const table = new GuestTable(r, host.code!);
     const back = await new Promise<CampaignGuest>((res) => { table.onCampaign = (rc, first) => res(new CampaignGuest(rc, first)); });
-    expect(back.mySlot).toBe(1);
-    await until(() => !!back.session);
-    expect(host.state.players).toHaveLength(2);
+    await until(() => back.mySlot === 1 && !!back.session);
+    await until(() => host.state.players.length === 2);
+    await until(() => hostSession.state.owners.s0u0 === r.peerId);
     expect(hostSession.state.owners.s0u0).toBe(r.peerId);
     expect(back.session!.mayControl('s0u0')).toBe(true);
     expect(back.session!.mayControl('s0u1')).toBe(false);
@@ -380,5 +385,159 @@ describe('saving', () => {
     setSaveListener(null);
     expect(results).toEqual([false, true]);
   });
+});
+
+describe('coming and going online', () => {
+  const joinAs = async (code: string, name: string) => {
+    const r = new RelayClient(url);
+    await r.join(code, name);
+    const table = new GuestTable(r, code);
+    return new Promise<CampaignGuest>((res) => { table.onCampaign = (rc, first) => res(new CampaignGuest(rc, first)); });
+  };
+  const newHost = async () => {
+    const r = new RelayClient(url);
+    await r.create('Host');
+    const camp = createCampaign({ id: `n${Math.random()}`, mode: 'endless', ruleset: 'quick', crewName: 'B', seed: 3, hostName: 'Host', crew: starterCrew(3), arc: null, llm: false, online: true, gm: 'computer' });
+    return new CampaignHost(camp, { relay: r, name: 'Host', llm: null, lang: () => 'en', resolve: String });
+  };
+  const dropWithoutLeaving = (c: RelayClient) => {
+    const raw = c as any;
+    raw.onDrop = () => {};
+    raw.ws.close();
+  };
+
+  it('never gives a seat away for having the same name', async () => {
+    const host = await newHost();
+    const owner = await joinAs(host.code!, 'Friend');
+    await until(() => host.state.players.length === 2);
+    owner.dispatch({ a: 'setOwner', id: 1, slot: 1 });
+    await until(() => host.state.crew[0].owner === 1);
+    dropWithoutLeaving((owner as any).relay);
+    await until(() => !host.state.players[1].connected);
+    // This client has no key, as if it were another computer using the same name.
+    stored.clear();
+    const stranger = await joinAs(host.code!, 'Friend');
+    await until(() => stranger.mySlot > 0);
+    expect(stranger.mySlot).toBe(2);
+    expect(host.state.players[1].connected).toBe(false);
+    expect(JSON.stringify(stranger.state)).not.toContain('"key"');
+    host.dispose();
+    stranger.dispose();
+  }, 15000);
+
+  it('does not hand out a seat whose owner is still connected, even with its key', async () => {
+    const host = await newHost();
+    const owner = await joinAs(host.code!, 'Friend');
+    await until(() => host.state.players.length === 2);
+    await wait(50);
+    const key = [...stored.entries()].find(([k]) => k === `zm.seat.${host.state.id}`)![1];
+    const other = await joinAs(host.code!, 'Other');
+    await until(() => host.state.players.length === 3);
+    (other as any).relay.send('host', { k: 'claimSeat', key });
+    await wait(100);
+    expect(host.state.players[1].name).toBe('Friend');
+    expect(host.state.players[1].connected).toBe(true);
+    host.dispose();
+    owner.dispose();
+    other.dispose();
+  }, 15000);
+
+  it('lets a returning game master back in, with the computer covering until then', async () => {
+    const host = await newHost();
+    const gm = await joinAs(host.code!, 'Gamemaster');
+    await until(() => host.state.players.length === 2);
+    host.dispatch({ a: 'setGm', slot: 1 });
+    await wait(50);
+    dropWithoutLeaving((gm as any).relay);
+    await until(() => !host.state.players[1].connected);
+    let hostSession: any = null;
+    host.onMission = (s) => { hostSession = s; };
+    host.dispatch({ a: 'takeGig', gig: host.state.offers[0].id, squad: [1, 2] });
+    await until(() => !!hostSession);
+    expect(hostSession.state.cfg.sides[1].control).toBe('ai');
+    const back = await joinAs(host.code!, 'Gamemaster');
+    await until(() => host.state.players[1].connected && !!back.session);
+    await until(() => hostSession.state.cfg.sides[1].control === 'human');
+    expect(back.mySlot).toBe(1);
+    await until(() => back.session!.localSides.has(1));
+    expect(host.state.players).toHaveLength(2);
+    host.dispose();
+    back.dispose();
+  }, 15000);
+
+  it('brings friends up to date after the host reconnects, and notices who left meanwhile', async () => {
+    // The shared test relay closes a room almost at once when its host drops, so this one waits.
+    const patient = await startRelay({ port: 0, hostGraceMs: 8000, createsPerMinute: 500, joinsPerMinute: 500 });
+    const url = `ws://127.0.0.1:${patient.port}`;
+    const r = new RelayClient(url);
+    await r.create('Host');
+    const table = new HostTable(newTable('Host', true), r, 'Host');
+    const gr = new RelayClient(url);
+    await gr.join(r.code!, 'Guest');
+    const guestTable = new GuestTable(gr, r.code!);
+    await until(() => table.table.seats[1].peer === gr.peerId);
+    const session = new HostSession(createGame(tableToConfig(table.table).cfg), [0], r, new Map([[gr.peerId!, [1]]]), 'Host');
+    const guestSession = await new Promise<GuestSession>((res) => {
+      guestTable.onStart = (s) => res(s as GuestSession);
+      r.send(gr.peerId!, { k: 'start', state: session.state, sides: [1], events: [], v: GAME_VERSION });
+    });
+    (r as any).ws.close();
+    const side = session.state.activeSide;
+    if (side === 0) session.submit({ type: 'ready' }, 0);
+    const before = session.state.seq;
+    await until(() => guestSession.state.seq === before, 6000);
+    expect(guestSession.state.seq).toBe(session.state.seq);
+    // A friend who leaves during the host's next outage is noticed when it returns.
+    const events: string[] = [];
+    r.handlers.onPeer = (e, p) => events.push(`${e}:${p.id}`);
+    const id = gr.peerId!;
+    (r as any).ws.close();
+    await wait(100);
+    gr.close();
+    await until(() => events.includes(`leave:${id}`), 8000);
+    session.dispose();
+    await patient.close();
+  }, 25000);
+
+  it('runs only one retry loop, and takes on the identity the relay gives it', async () => {
+    const r = new RelayClient(url);
+    await r.create('Host');
+    const g = new RelayClient(url);
+    await g.join(r.code!, 'Guest');
+    const raw = g as any;
+    let opens = 0;
+    const realOpen = raw.open.bind(raw);
+    raw.open = () => { opens += 1; return realOpen(); };
+    g.url = 'ws://127.0.0.1:9';
+    raw.ws.close();
+    await wait(2500);
+    g.url = url;
+    raw.peerToken = 'lost-token';
+    const statuses: string[] = [];
+    g.handlers.onStatus = (s) => statuses.push(s);
+    await until(() => statuses.includes('open'), 15000);
+    const afterRecovery = opens;
+    await wait(3000);
+    expect(opens).toBe(afterRecovery);
+    expect(g.peerId).not.toBe('p1');
+    r.close();
+    g.close();
+  }, 30000);
+
+  it('does not count a dropped guest as ready in the lobby', async () => {
+    const r = new RelayClient(url);
+    await r.create('Host');
+    const table = new HostTable(newTable('Host', true), r, 'Host');
+    const g = new RelayClient(url);
+    await g.join(r.code!, 'Guest');
+    const guest = new GuestTable(g, r.code!);
+    await until(() => table.table.seats[1].peer === g.peerId);
+    guest.updateMine({ ready: true });
+    await until(() => table.table.seats[1].ready);
+    dropWithoutLeaving(g);
+    await until(() => !table.table.seats[1].ready);
+    expect(startProblems(table.table)).toContain('table.problem.notReady');
+    r.close();
+  }, 15000);
 });
 

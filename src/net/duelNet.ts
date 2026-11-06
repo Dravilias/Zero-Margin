@@ -86,7 +86,11 @@ export class DuelHost implements DuelController {
       const m = data as GuestMsg;
       if (m.k === 'duelAct' && from === this.friend) this.apply(m.action, this.otherSide());
     };
-    relay.handlers.onStatus = (status) => { this.status = status; this.onChange?.(); };
+    relay.handlers.onStatus = (status) => {
+      this.status = status;
+      if (status === 'open') this.send();
+      this.onChange?.();
+    };
     relay.handlers.onClosed = (reason) => this.onClosed?.(reason);
   }
 

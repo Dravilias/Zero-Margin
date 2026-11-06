@@ -1,4 +1,5 @@
 export const RELAY_PROTOCOL = 1;
+const REQUEST_TIMEOUT_MS = 10000;
 
 export interface PeerInfo { id: string; name: string; connected?: boolean }
 
@@ -25,6 +26,9 @@ export class RelayClient {
   private stopped = false;
   private attempts = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnecting = false;
+  /** Friends this host has heard about, to compare with the relay's list after an outage. */
+  private knownPeers = new Map<string, string>();
   role: 'host' | 'peer' | null = null;
   code: string | null = null;
   hostToken: string | null = null;
@@ -78,7 +82,21 @@ export class RelayClient {
 
   private request(msg: unknown, ops: string[]): Promise<any> {
     return new Promise((resolve, reject) => {
-      this.pending = { resolve, reject, ops };
+      // A relay that accepts the connection but never answers mustn't hang the game forever.
+      const timer = setTimeout(() => {
+        if (this.pending?.resolve !== finish) return;
+        this.pending = null;
+        reject(new RelayError('unreachable'));
+      }, REQUEST_TIMEOUT_MS);
+      const finish = (v: unknown) => {
+        clearTimeout(timer);
+        resolve(v);
+      };
+      const fail = (e: Error) => {
+        clearTimeout(timer);
+        reject(e);
+      };
+      this.pending = { resolve: finish, reject: fail, ops };
       this.raw(msg);
     });
   }
@@ -98,7 +116,11 @@ export class RelayClient {
       return;
     }
     switch (m.op) {
-      case 'peer': this.handlers.onPeer?.(m.event, m.peer); break;
+      case 'peer':
+        if (m.event === 'leave') this.knownPeers.delete(m.peer.id);
+        else this.knownPeers.set(m.peer.id, m.peer.name);
+        this.handlers.onPeer?.(m.event, m.peer);
+        break;
       case 'host': this.handlers.onHost?.(m.event); break;
       case 'msg': this.handlers.onMessage?.(m.from, m.data); break;
       case 'closed':
@@ -118,29 +140,61 @@ export class RelayClient {
       this.handlers.onStatus?.('closed');
       return;
     }
+    // A failed attempt's socket closes too; only one retry loop may ever run.
+    if (this.reconnecting) return;
+    this.reconnecting = true;
     this.handlers.onStatus?.('reconnecting');
-    while (!this.stopped) {
-      this.attempts += 1;
-      await new Promise((res) => setTimeout(res, Math.min(10000, 500 * 2 ** Math.min(this.attempts, 5))));
-      if (this.stopped) return;
-      try {
-        await this.open();
-        if (this.role === 'host') {
-          await this.request({ op: 'resume', code: this.code, hostToken: this.hostToken }, ['resumed']);
-        } else {
-          await this.request({ op: 'join', proto: RELAY_PROTOCOL, code: this.code, name: this.name, peerToken: this.peerToken }, ['joined']);
-        }
-        this.attempts = 0;
-        this.handlers.onStatus?.('open');
-        return;
-      } catch (e) {
-        if (e instanceof RelayError && e.code === 'no-room') {
-          this.stopped = true;
-          this.handlers.onClosed?.('gone');
-          this.ws?.close();
+    try {
+      while (!this.stopped) {
+        this.attempts += 1;
+        await new Promise((res) => setTimeout(res, Math.min(10000, 500 * 2 ** Math.min(this.attempts, 5))));
+        if (this.stopped) return;
+        try {
+          await this.open();
+          if (this.role === 'host') {
+            const m = await this.request({ op: 'resume', code: this.code, hostToken: this.hostToken }, ['resumed']);
+            this.catchUpOnPeers(m.peers ?? []);
+          } else {
+            const m = await this.request({ op: 'join', proto: RELAY_PROTOCOL, code: this.code, name: this.name, peerToken: this.peerToken }, ['joined']);
+            // After a long outage the relay may have given this player a new identity.
+            this.peerId = m.peerId;
+            this.peerToken = m.peerToken;
+          }
+          this.attempts = 0;
+          this.handlers.onStatus?.('open');
           return;
+        } catch (e) {
+          if (e instanceof RelayError && (e.code === 'no-room' || e.code === 'room-full')) {
+            this.stopped = true;
+            this.handlers.onClosed?.('gone');
+            this.ws?.close();
+            return;
+          }
+          // Drop a half-open socket before trying again.
+          const old = this.ws;
+          this.ws = null;
+          old?.close();
         }
       }
+    } finally {
+      this.reconnecting = false;
+    }
+  }
+
+  /** Friends can come and go while the host is offline, and the relay can't tell the host until it returns. */
+  private catchUpOnPeers(peers: PeerInfo[]): void {
+    const present = new Map(peers.map((p) => [p.id, p]));
+    for (const [id, name] of [...this.knownPeers]) {
+      if (!present.has(id)) {
+        this.knownPeers.delete(id);
+        this.handlers.onPeer?.('leave', { id, name });
+      }
+    }
+    for (const p of peers) {
+      const known = this.knownPeers.has(p.id);
+      this.knownPeers.set(p.id, p.name);
+      if (p.connected === false) this.handlers.onPeer?.('lost', p);
+      else if (!known) this.handlers.onPeer?.('join', p);
     }
   }
 
@@ -179,6 +233,8 @@ export class RelayClient {
     this.stopped = true;
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.raw({ op: this.role === 'host' ? 'close' : 'leave' });
+    this.pending?.reject(new RelayError('unreachable'));
+    this.pending = null;
     this.ws?.close();
     this.ws = null;
   }

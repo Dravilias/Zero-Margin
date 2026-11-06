@@ -1,9 +1,10 @@
 {
   "name": "zero-margin",
   "productName": "Zero Margin",
-  "version": "0.6.3",
+  "version": "0.6.5",
   "description": "An original cyberpunk tabletop game: squad skirmish and story campaigns, against the computer or with friends.",
   "author": "Zero Margin",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",
@@ -32,7 +33,9 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "LICENSE",
+      "NOTICE"
     ],
     "linux": {
       "target": "AppImage",

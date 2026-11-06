@@ -10,10 +10,10 @@ import { newTable, startProblems, tableToConfig, type Seat, type Table } from '.
 
 /* ---------- Messages exchanged through the relay; the relay itself never reads them ---------- */
 
-export const GAME_VERSION = 3;
+export const GAME_VERSION = 4;
 
 export type HostMsg =
-  | { k: 'camp'; state: CampaignState; you: number }
+  | { k: 'camp'; state: CampaignState; you: number; key?: string }
   | { k: 'duel'; state: DuelState; you: DuelSide }
   | { k: 'table'; table: Table; you: string }
   | { k: 'start'; state: GameState; sides: number[]; events: GameEvent[]; v: number }
@@ -24,6 +24,7 @@ export type HostMsg =
 
 export type GuestMsg =
   | { k: 'campAct'; action: CampaignAction }
+  | { k: 'claimSeat'; key: string }
   | { k: 'duelAct'; action: DuelAction }
   | { k: 'claim'; seat: number }
   | { k: 'seat'; patch: Partial<Pick<Seat, 'faction' | 'roster' | 'ready' | 'team'>> }
@@ -150,8 +151,7 @@ export class LocalSession implements GameSession {
   }
 
   mayControl(unitId: string): boolean {
-    const owner = this.state.owners?.[unitId];
-    return owner === undefined || owner === 'host';
+    return mayCommand(this.state, unitId, 'host');
   }
 
   /** The computer's next move, or null if it should wait for now. */
@@ -204,9 +204,17 @@ export interface CampaignPolicy {
   owners(): Record<string, string>;
   /** Called first for every coming and going, so the campaign knows about it too. */
   peerEvent(event: 'join' | 'rejoin' | 'lost' | 'leave', peer: PeerInfo): void;
+  /** A returning player proves which seat is theirs. */
+  claimSeat(from: string, key: string): void;
 }
 
 const OWNED_ACTIONS_BY_UNIT = new Set<Action['type']>(['place', 'select']);
+
+/** Co-op units have owners, but a crew member who has snapped fights for whoever is running the other side. */
+function mayCommand(state: GameState, unitId: string, me: string | null): boolean {
+  const owner = state.owners?.[unitId];
+  return owner === undefined || owner === me || !!state.units.find((u) => u.id === unitId)?.snapped;
+}
 
 /** Runs the rules on the host's PC and tells the guests what happened. */
 export class HostSession extends LocalSession {
@@ -226,7 +234,10 @@ export class HostSession extends LocalSession {
     this.code = relay.code;
     relay.handlers.onMessage = (from, data) => this.onGuest(from, data as GuestMsg);
     relay.handlers.onPeer = (event, peer) => this.onPeer(event, peer);
-    relay.handlers.onStatus = (status) => this.onStatus?.(status);
+    relay.handlers.onStatus = (status) => {
+      this.onStatus?.(status);
+      if (status === 'open') this.resync();
+    };
     relay.handlers.onClosed = (reason) => this.onClosed?.(reason);
     relay.handlers.onHost = undefined;
     for (const [peer, sides] of peerSides) {
@@ -241,6 +252,25 @@ export class HostSession extends LocalSession {
     }
   }
 
+  /** Anything the host did while offline never reached the friends, so they get the current state on its return. */
+  private resync(): void {
+    for (const [peer, sides] of this.peerSides) {
+      this.relay.send(peer, { k: 'state', state: this.state, events: [], sides } satisfies HostMsg);
+    }
+  }
+
+  /** A friend's seat changed: update what they control and tell them. */
+  refreshPeer(peerId: string): void {
+    const policy = this.campaign?.policy;
+    if (!policy) return;
+    const sides = policy.sidesFor({ id: peerId, name: this.nameOfPeer(peerId) });
+    this.peerSides.set(peerId, sides);
+    this.state = { ...this.state, owners: policy.owners() };
+    if (sides.includes(1)) this.state = setSideControl(this.state, 1, 'human');
+    this.relay.send(peerId, { k: 'start', state: this.state, sides, events: [], v: GAME_VERSION } satisfies HostMsg);
+    this.publish([]);
+  }
+
   chat(text: string): void {
     const clean = text.slice(0, 300);
     this.onChat?.(this.hostName, clean);
@@ -253,6 +283,10 @@ export class HostSession extends LocalSession {
       const text = String(m.text).slice(0, 300);
       this.onChat?.(name, text);
       this.relay.send('all', { k: 'chat', from: name, text } satisfies HostMsg);
+      return;
+    }
+    if (m.k === 'claimSeat') {
+      this.campaign?.policy.claimSeat(from, String(m.key));
       return;
     }
     if (m.k !== 'action') return;
@@ -421,8 +455,7 @@ export class GuestSession implements GameSession {
   idle(): void {}
 
   mayControl(unitId: string): boolean {
-    const owner = this.state.owners?.[unitId];
-    return owner === undefined || owner === this.relay.peerId;
+    return mayCommand(this.state, unitId, this.relay.peerId);
   }
 
   dispose(): void {
@@ -498,7 +531,11 @@ export class HostTable implements TableController {
     table.code = relay.code;
     relay.handlers.onPeer = (event, peer) => this.onPeer(event, peer);
     relay.handlers.onMessage = (from, data) => this.onGuest(from, data as GuestMsg);
-    relay.handlers.onStatus = (status) => { this.status = status; this.onChange?.(); };
+    relay.handlers.onStatus = (status) => {
+      this.status = status;
+      if (status === 'open') this.broadcast();
+      else this.onChange?.();
+    };
     relay.handlers.onClosed = (reason) => this.onClosed?.(reason);
   }
 
@@ -524,6 +561,10 @@ export class HostTable implements TableController {
       this.peers.delete(peer.id);
       const seat = this.seatOf(peer.id);
       if (seat) Object.assign(seat, { kind: 'open', peer: null, name: '', ready: false });
+    } else if (event === 'lost') {
+      // Someone who isn't there isn't ready, so the game can't start and wait for them.
+      const seat = this.seatOf(peer.id);
+      if (seat) seat.ready = false;
     }
     this.broadcast();
   }

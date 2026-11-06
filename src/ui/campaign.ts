@@ -109,7 +109,7 @@ function resume(id: string): void {
       ...save.camp, busy: false,
       players: save.camp.players.map((p, i) => ({ ...p, peer: null, connected: i === 0 || !online })),
     };
-    run(new CampaignHost(camp, { ...hostOptions(relay), game: save.game }));
+    run(new CampaignHost(camp, { ...hostOptions(relay), game: save.game, keys: save.keys }));
   };
   if (save.online) return void go(true);
   void go(false);
@@ -273,6 +273,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
   let selected: number | null = null;
   let squadFor: Gig | null = null;
   let squad: number[] = [];
+  let hireFor: RoleId | null = null;
   const drafts = { free: '', gm: '', chat: '' };
   let actor: number | null = null;
   const chatLines: string[] = [];
@@ -433,7 +434,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       el('h3', {}, t('camp.hire')),
       el('div.recruit', {}, RECRUITABLE.map((r) => el('button.recruit-btn', {
         title: t(`role.${r}.d`), disabled: ctl.state.cash < hireCost(r),
-        onclick: () => ctl.dispatch({ a: 'hire', role: r, name: pickHandle(randomSeed(), ctl.state.crew.map((x) => x.name)) }),
+        onclick: () => { sfx.click(); hireFor = r; render(); },
       }, roleIcon(r), el('span', {}, t(`role.${r}`)), el('small', {}, hireCost(r))))),
     );
   };
@@ -444,7 +445,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
     const hub = ctl.state.phase === 'hub';
     const def = ROLES[m.role];
     const weaponOption = (w: WeaponId | null, current: WeaponId | null) => ({
-      value: w ?? '', label: w ? `${t(`weapon.${w}`)}${w !== current && weaponCost(w) ? ` (${cr(weaponCost(w))})` : ''}` : t('squad.none'),
+      value: w ?? '', label: w ? `${t(`weapon.${w}`)}${w !== current && !m.owned.includes(w) && weaponCost(w) ? ` (${cr(weaponCost(w))})` : ''}` : t('squad.none'),
     });
     const stat = (label: string, value: string | number) => el('div.stat', {}, el('span.stat-l', {}, label), el('span.stat-v', {}, value));
     const kinds: GrenadeKind[] = ['frag', 'smoke', 'emp'];
@@ -520,7 +521,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       onclick: () => {
         sfx.click();
         squadFor = g;
-        squad = ctl.state.crew.filter((m) => m.status === 'ok').slice(0, MAX_SQUAD).map((m) => m.id);
+        squad = ctl.state.crew.filter((m) => m.status === 'ok' && mayManage(m)).slice(0, MAX_SQUAD).map((m) => m.id);
         render();
       },
     },
@@ -540,7 +541,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
 
   const squadDialog = (g: Gig) => {
     const s = ctl.state;
-    const ready = s.crew.filter((m) => m.status === 'ok');
+    const ready = s.crew.filter((m) => m.status === 'ok' && mayManage(m));
     const chosen = ready.filter((m) => squad.includes(m.id));
     const threat = effectiveThreat(s, g);
     return el('div.modal-back', {}, el('div.modal.card.camp-squad', {},
@@ -556,6 +557,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
           render();
         },
       }, roleIcon(m.role), el('span.camp-crew-name', {}, el('b', {}, m.name), el('small', {}, `${t(`role.${m.role}`)} · ${t('camp.level', { n: m.level })}`))))),
+      !ready.length ? el('p.form-msg', {}, t('camp.squadNone')) : null,
       el('p.muted.small', {}, t('camp.odds', { crew: crewValue(chosen), enemy: enemyPoints(chosen, threat), threat, faction: t(`faction.${g.enemy}`) })),
       s.ruleset === 'full' ? el('p.form-msg', {}, t('camp.fullWarning')) : null,
       el('div.modal-actions', {},
@@ -568,6 +570,27 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
           },
         }, t('camp.go')),
         el('button.btn-quiet', { onclick: () => { squadFor = null; render(); } }, t('common.cancel')),
+      ),
+    ));
+  };
+
+  const hireDialog = (role: RoleId) => {
+    const cost = hireCost(role);
+    return el('div.modal-back', {}, el('div.modal.card', {},
+      el('h2', {}, t('camp.hireConfirm', { role: t(`role.${role}`) })),
+      el('p', {}, t(`role.${role}.d`)),
+      el('p', {}, t('camp.hireCost', { cost: cr(cost), left: cr(ctl.state.cash - cost) })),
+      el('p.muted.small', {}, t('camp.hireNote')),
+      el('div.modal-actions', {},
+        el('button.btn-primary', {
+          disabled: ctl.state.cash < cost,
+          onclick: () => {
+            hireFor = null;
+            ctl.dispatch({ a: 'hire', role, name: pickHandle(randomSeed(), ctl.state.crew.map((x) => x.name)) });
+            render();
+          },
+        }, t('camp.hireYes')),
+        el('button.btn-quiet', { onclick: () => { hireFor = null; render(); } }, t('common.cancel')),
       ),
     ));
   };
@@ -616,6 +639,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
         el('section.camp-col', {}, m ? crewDetail(m) : null),
       ),
       squadFor ? squadDialog(squadFor) : null,
+      hireFor ? hireDialog(hireFor) : null,
     );
   };
 

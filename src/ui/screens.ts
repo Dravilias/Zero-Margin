@@ -294,7 +294,7 @@ export function menuScreen(): void {
   const menu = el('div.menu', {},
     art,
     rain,
-    el('div.menu-version', {}, 'v0.6.3'),
+    el('div.menu-version', {}, 'v0.6.5'),
     el('div.menu-col', {},
       el('div', {}, el('h1.logo', {}, 'ZERO MARGIN'), el('p.tagline', {}, t('app.tagline'))),
       el('nav.menu-list', {},

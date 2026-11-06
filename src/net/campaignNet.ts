@@ -1,6 +1,7 @@
 import {
   applyCampaign, buildMission, freeLeft, missionResult, nodeOf, MAX_PLAYERS, type Arc, type CampaignAction, type CampaignState, type Player, type Txt,
 } from '../engine/campaign';
+import { setSideControl } from '../engine/game';
 import type { GameState } from '../engine/types';
 import {
   debriefRequest, judgeRequest, outcomeRequest, parseJudgement, sceneRequest, usableNarration, writeArc, type GmLang, type LlmFailure, type LlmTransport, type RunnerContext,
@@ -14,7 +15,7 @@ const INDEX_KEY = 'zm.campaigns.v1';
 const slotKey = (id: string) => `zm.campaign.${id}`;
 export const MAX_SAVES = 8;
 
-export interface CampaignSave { camp: CampaignState; game: GameState | null; online: boolean }
+export interface CampaignSave { camp: CampaignState; game: GameState | null; online: boolean; keys?: Record<number, string> }
 export interface CampaignSaveInfo { id: string; crewName: string; mode: CampaignState['mode']; title: Txt | null; chapter: number; chapters: number; gigsDone: number; arcsDone: number; cash: number; online: boolean; savedAt: number }
 
 export function listCampaignSaves(): CampaignSaveInfo[] {
@@ -37,6 +38,7 @@ export function loadCampaign(id: string): CampaignSave | null {
       m.humanity ??= 50;
       m.humanityMax ??= 50;
       m.injuries ??= [];
+      m.owned ??= [m.ranged, m.melee].filter((w) => w !== null);
     }
     return data;
   } catch {
@@ -51,9 +53,9 @@ export function deleteCampaign(id: string): void {
   } catch { /* storage may be unavailable */ }
 }
 
-export function saveCampaign(camp: CampaignState, game: GameState | null, online: boolean): void {
+export function saveCampaign(camp: CampaignState, game: GameState | null, online: boolean, keys?: Record<number, string>): void {
   try {
-    localStorage.setItem(slotKey(camp.id), JSON.stringify({ camp, game, online } satisfies CampaignSave));
+    localStorage.setItem(slotKey(camp.id), JSON.stringify({ camp, game, online, keys } satisfies CampaignSave));
     const info: CampaignSaveInfo = {
       id: camp.id, crewName: camp.crewName, mode: camp.mode, title: camp.arc?.title ?? null, chapter: nodeOf(camp)?.chapter ?? 0, chapters: camp.arc?.chapters ?? 0,
       gigsDone: camp.gigsDone, arcsDone: camp.arcsDone, cash: camp.cash, online, savedAt: Date.now(),
@@ -64,6 +66,30 @@ export function saveCampaign(camp: CampaignState, game: GameState | null, online
   } catch {
     reportSave(false);
   }
+}
+
+/* ---------- Seat keys: how a returning player proves a seat is theirs, kept on their own machine ---------- */
+
+const SPECTATOR_WAIT_MS = 6000;
+const seatKeyName = (campaign: string) => `zm.seat.${campaign}`;
+
+function newSeatKey(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function loadSeatKey(campaign: string): string | null {
+  try {
+    return localStorage.getItem(seatKeyName(campaign));
+  } catch {
+    return null;
+  }
+}
+
+function storeSeatKey(campaign: string, key: string | undefined): void {
+  if (!key) return;
+  try {
+    localStorage.setItem(seatKeyName(campaign), key);
+  } catch { /* they'd need the host to hand their characters back */ }
 }
 
 /* ---------- What the campaign screens talk to, wherever the campaign is running ---------- */
@@ -100,8 +126,10 @@ export interface HostOptions {
   resolve: (t: Txt) => string;
   /** A battle saved in the middle, to pick back up. */
   game?: GameState | null;
+  /** The secret that proves each seat belongs to its player, from a saved campaign. */
+  keys?: Record<number, string>;
   /** Saving is skipped in tests and for a table nobody wants kept. */
-  save?: (camp: CampaignState, game: GameState | null, online: boolean) => void;
+  save?: (camp: CampaignState, game: GameState | null, online: boolean, keys?: Record<number, string>) => void;
 }
 
 export class CampaignHost implements CampaignController {
@@ -124,6 +152,9 @@ export class CampaignHost implements CampaignController {
   private asked = new Set<string>();
   private game: GameState | null;
   private disposed = false;
+  /** Never part of the shared state: each player only ever receives their own. */
+  private seatKeys: Record<number, string> = {};
+  private spectators = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(public state: CampaignState, private o: HostOptions) {
     this.relay = o.relay;
@@ -131,6 +162,7 @@ export class CampaignHost implements CampaignController {
     this.online = !!o.relay;
     this.code = o.relay?.code ?? null;
     this.game = o.game ?? null;
+    this.seatKeys = { ...o.keys };
     this.attachHub();
     this.save();
   }
@@ -146,7 +178,7 @@ export class CampaignHost implements CampaignController {
   }
 
   private save(): void {
-    this.o.save?.(this.state, this.game, this.online);
+    this.o.save?.(this.state, this.game, this.online, this.seatKeys);
   }
 
   private attachHub(): void {
@@ -156,6 +188,7 @@ export class CampaignHost implements CampaignController {
     relay.handlers.onPeer = (event, peer) => this.peerEvent(event, peer);
     relay.handlers.onStatus = (status) => {
       this.status = status;
+      if (status === 'open') this.broadcast();
       this.onChange?.();
     };
     relay.handlers.onClosed = (reason) => this.onClosed?.(reason);
@@ -200,7 +233,7 @@ export class CampaignHost implements CampaignController {
   private broadcast(): void {
     if (!this.relay) return;
     this.state.players.forEach((p, you) => {
-      if (p.peer && p.connected) this.relay!.send(p.peer, { k: 'camp', state: this.state, you } satisfies HostMsg);
+      if (p.peer && p.connected) this.relay!.send(p.peer, { k: 'camp', state: this.state, you, key: this.seatKeys[you] } satisfies HostMsg);
     });
   }
 
@@ -218,6 +251,8 @@ export class CampaignHost implements CampaignController {
       const text = String(m.text).slice(0, 300);
       this.onChat?.(name, text);
       this.relay?.send('all', { k: 'chat', from: name, text } satisfies HostMsg);
+    } else if (m.k === 'claimSeat') {
+      this.claimSeat(from, String(m.key));
     } else if (m.k === 'campAct') {
       const slot = this.state.players.findIndex((p) => p.peer === from);
       if (slot > 0 && m.action && typeof m.action === 'object') this.apply(m.action, slot, from);
@@ -230,14 +265,15 @@ export class CampaignHost implements CampaignController {
     let slot = players.findIndex((p) => p.peer === peer.id);
     if (event === 'join' || event === 'rejoin') {
       if (slot < 0) {
-        // Someone coming back, after a reload or when a saved campaign resumes, gets their own seat back by name.
-        slot = players.findIndex((p, i) => i > 0 && !p.connected && p.name === peer.name);
-        if (slot < 0) slot = players.findIndex((p, i) => i > 0 && !p.peer);
+        // A newcomer only gets an empty seat. A returning player proves their old one with its key, whatever their name is.
+        const empty = (i: number) => i > 0 && !players[i].peer && i !== this.state.gmSlot && !this.state.crew.some((m) => m.owner === i && m.status !== 'dead');
+        slot = players.findIndex((_, i) => empty(i));
         if (slot < 0 && players.length < MAX_PLAYERS) slot = players.push({ name: peer.name, peer: peer.id, connected: true }) - 1;
-      }
-      if (slot < 0) {
-        this.relay?.kick(peer.id);
-        return;
+        if (slot < 0) {
+          this.watchOnly(peer.id);
+          return;
+        }
+        this.seatKeys[slot] = newSeatKey();
       }
       players[slot] = { name: peer.name, peer: peer.id, connected: true };
       this.onNotice?.('net.playerBack', peer.name);
@@ -246,6 +282,39 @@ export class CampaignHost implements CampaignController {
       if (!this.session) this.onNotice?.('net.playerLostCovered', peer.name);
     }
     this.internal({ a: 'setPlayers', players });
+  }
+
+  /** Every seat is taken, but one may be this player's: give them a moment to prove it. */
+  private watchOnly(peerId: string): void {
+    this.relay?.send(peerId, { k: 'camp', state: this.state, you: -1 } satisfies HostMsg);
+    this.spectators.set(peerId, setTimeout(() => {
+      this.spectators.delete(peerId);
+      this.relay?.kick(peerId);
+    }, SPECTATOR_WAIT_MS));
+  }
+
+  private claimSeat(from: string, key: string): void {
+    const seat = Object.entries(this.seatKeys).find(([, k]) => k === key);
+    const slot = seat ? Number(seat[0]) : -1;
+    const players: Player[] = this.state.players.map((p) => ({ ...p }));
+    const target = players[slot];
+    const name = this.names.get(from);
+    // A seat whose owner is still at the table can't be taken, whatever key is offered.
+    if (slot <= 0 || !target || !name || (target.connected && target.peer !== from)) return;
+    const timer = this.spectators.get(from);
+    if (timer) clearTimeout(timer);
+    this.spectators.delete(from);
+    const old = players.findIndex((p) => p.peer === from);
+    if (old > 0 && old !== slot) {
+      delete this.seatKeys[old];
+      // The seat they were just given goes away again if nothing depends on it.
+      if (old === players.length - 1 && old !== this.state.gmSlot && !this.state.crew.some((m) => m.owner === old)) players.pop();
+      else players[old] = { ...players[old], peer: null, connected: false };
+    }
+    players[slot] = { name, peer: from, connected: true };
+    this.onNotice?.('net.playerBack', name);
+    this.internal({ a: 'setPlayers', players });
+    if (this.session instanceof HostSession) this.session.refreshPeer(from);
   }
 
   /* ---------- Battles ---------- */
@@ -265,9 +334,11 @@ export class CampaignHost implements CampaignController {
   private startMission(): void {
     const game = this.game ?? buildMission(this.state);
     this.game = game;
-    const gmIsMe = this.state.gmSlot === 0;
-    const gmIsLocal = gmIsMe || (this.state.gmSlot !== null && !this.state.players[this.state.gmSlot]?.peer);
+    const gm = this.state.gmSlot;
+    const gmIsLocal = gm === 0 || (gm !== null && !this.relay);
     const local = gmIsLocal ? [0, 1] : [0];
+    // A game master who isn't at the table can't run the enemy, so the computer covers until they're back.
+    const gmAway = gm !== null && !gmIsLocal && !this.state.players[gm]?.connected;
     const persist = (s: GameState) => {
       this.game = s;
       this.save();
@@ -275,7 +346,8 @@ export class CampaignHost implements CampaignController {
     const finished = (s: GameState) => this.finishMission(s);
     let session: LocalSession;
     if (this.relay) {
-      const started: GameState = { ...game, owners: this.ownerMap() };
+      const owned: GameState = { ...game, owners: this.ownerMap() };
+      const started = gmAway ? setSideControl(owned, 1, 'ai') : owned;
       const peerSides = new Map<string, number[]>();
       this.state.players.forEach((p, i) => {
         if (i > 0 && p.peer && p.connected) peerSides.set(p.peer, i === this.state.gmSlot ? [1] : [0]);
@@ -284,6 +356,7 @@ export class CampaignHost implements CampaignController {
         sidesFor: (peer) => (this.state.players.findIndex((p) => p.peer === peer.id) === this.state.gmSlot ? [1] : [0]),
         owners: () => this.ownerMap(),
         peerEvent: (event, peer) => this.peerEvent(event, peer),
+        claimSeat: (from, key) => this.claimSeat(from, key),
       };
       session = new HostSession(started, local, this.relay, peerSides, this.o.name, new Map(this.names), { keepRelay: true, policy });
     } else {
@@ -403,6 +476,7 @@ export class CampaignHost implements CampaignController {
 
   dispose(): void {
     this.disposed = true;
+    for (const t of this.spectators.values()) clearTimeout(t);
     this.session?.dispose();
     this.relay?.close();
   }
@@ -430,6 +504,10 @@ export class CampaignGuest implements CampaignController {
     this.code = relay.code;
     this.hasLlm = first.state.llm;
     this.attachHub();
+    // Coming back to a campaign played before? Ask for the old seat before taking the new one.
+    const mine = loadSeatKey(first.state.id);
+    if (mine && mine !== first.key) relay.send('host', { k: 'claimSeat', key: mine } satisfies GuestMsg);
+    else storeSeatKey(first.state.id, first.key);
   }
 
   private attachHub(): void {
@@ -449,6 +527,7 @@ export class CampaignGuest implements CampaignController {
         this.state = m.state;
         this.mySlot = m.you;
         this.hasLlm = m.state.llm;
+        storeSeatKey(m.state.id, m.key);
         this.onChange?.();
         break;
       case 'start': {

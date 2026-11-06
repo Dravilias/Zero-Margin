@@ -8,7 +8,7 @@ The game has three modes:
 - **Story campaign:** run a crew from job to job through a story with choices and endings, or keep going on an endless job board.
 - **Card duel:** a hacker tries to crack a corporation's network while the corporation hunts them down.
 
-> **Status: early (v0.6.3).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
+> **Status: early (v0.6.5).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
 
 ## Getting started
 
@@ -170,8 +170,10 @@ Setting `ZM_SMOKE_TEST=1` makes the desktop app run a check using a throwaway pr
 - **Card duel:** online players receive the full game state, so a modified client could see the opponent's hand.
 - **Tutorial:** it only teaches the basics of skirmish, not the campaign or the card duel.
 
-## Credits and legal
+## License
+
+Zero Margin is free and stays free. It's released under the [PolyForm Noncommercial License 1.0.0](LICENSE): you can use, copy, change and share it for any noncommercial purpose, but you can't make money from it. Keep the [license](LICENSE) and [notice](NOTICE) with any copy you share. Third-party packages keep their own licenses.
+
+## Credits
 
 Zero Margin takes inspiration from the mechanics of classic cyberpunk tabletop RPGs. Its setting, names, numbers, text and art are original. It isn't affiliated with or endorsed by the publishers of any tabletop game.
-
-No license has been chosen yet, so all rights are reserved by default.

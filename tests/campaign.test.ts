@@ -8,6 +8,7 @@ import { ROLES } from '../src/engine/data';
 import { applyAction, createGame } from '../src/engine/game';
 import { Rand } from '../src/engine/rng';
 import { THE_NOTE, generateArc } from '../src/engine/story';
+import { LocalSession } from '../src/net/sessions';
 import { DICTIONARIES } from '../src/ui/i18n';
 
 function newCamp(over: Partial<Parameters<typeof createCampaign>[0]> = {}): CampaignState {
@@ -480,6 +481,33 @@ describe('depth rules', () => {
 });
 
 describe('actions from other players are not trusted', () => {
+  it('lets the other side command a crew member who has snapped', () => {
+    const state = { cfg: { seed: 1 }, owners: { s0u0: 'p1' }, units: [{ id: 's0u0', snapped: { side: 0, team: 0 } }] };
+    const session = new LocalSession(state as never, [1]);
+    expect(session.mayControl('s0u0')).toBe(true);
+  });
+
+  it('lets a guest bring only their own people on a job, and the host anyone', () => {
+    const s = act(newCamp({ mode: 'endless', arc: null, online: true }), { a: 'setPlayers', players: [{ name: 'H', peer: null, connected: true }, { name: 'F', peer: 'p', connected: true }] });
+    const own = act(s, { a: 'setOwner', id: 1, slot: 1 }, 1);
+    const gig = own.offers[0].id;
+    expect(refused(own, { a: 'takeGig', gig, squad: [1, 2] }, 1)).toBe('notYours');
+    expect(refused(own, { a: 'takeGig', gig, squad: [1] }, 1)).toBeUndefined();
+    expect(refused(own, { a: 'takeGig', gig, squad: [1, 2] }, 0)).toBeUndefined();
+  });
+
+  it('charges for a weapon once, so switching back is free', () => {
+    let s = act(newCamp({ mode: 'endless', arc: null }), { a: 'rest' });
+    const id = s.crew.find((m) => m.role === 'breaker')!.id;
+    const start = s.crew.find((m) => m.id === id)!.ranged!;
+    const cash = s.cash;
+    s = act(s, { a: 'weapon', id, kind: 'ranged', weapon: 'smg' });
+    expect(s.cash).toBe(cash - 150);
+    s = act(s, { a: 'weapon', id, kind: 'ranged', weapon: start });
+    s = act(s, { a: 'weapon', id, kind: 'ranged', weapon: 'smg' });
+    expect(s.cash).toBe(cash - 150);
+  });
+
   const online = () => {
     let s = newCamp({ mode: 'endless', arc: null, online: true });
     s = act(s, { a: 'setPlayers', players: [...s.players, { name: 'F', peer: 'p', connected: true }] });

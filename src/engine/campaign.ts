@@ -71,6 +71,8 @@ export interface CrewMember {
   ranged: WeaponId | null;
   melee: WeaponId;
   chrome: ChromeId[];
+  /** Weapons this person already has, which cost nothing to switch back to. */
+  owned: WeaponId[];
   extra: Grenades;
   bonus: Required<Pick<UnitBonus, 'hp' | 'stats' | 'skills'>>;
   level: number;
@@ -210,7 +212,7 @@ export function makeCrew(id: number, role: RoleId, name: string, owner = 0, stat
   const def = ROLES[role];
   const humanity = 30 + (def.stats.nerve + (stats.nerve ?? 0)) * 4;
   return {
-    id, name: name.slice(0, 24), role, ranged: def.ranged[0], melee: def.melee[0], chrome: [], extra: { frag: 0, smoke: 0, emp: 0 },
+    id, name: name.slice(0, 24), role, ranged: def.ranged[0], melee: def.melee[0], chrome: [], owned: [def.ranged[0], def.melee[0]].filter((w): w is WeaponId => !!w), extra: { frag: 0, smoke: 0, emp: 0 },
     bonus: { hp: 0, stats: { ...stats }, skills: {} }, humanity, humanityMax: humanity, injuries: [], level: 1, xp: 0, points: 0, owner, status: 'ok', missions: 0, kills: 0,
   };
 }
@@ -563,6 +565,12 @@ function spend(s: CampaignState, amount: number): void {
   s.cash -= amount;
 }
 
+function buyWeapon(s: CampaignState, m: CrewMember, w: WeaponId): void {
+  if (m.owned.includes(w)) return;
+  spend(s, weaponCost(w));
+  m.owned.push(w);
+}
+
 /** A player may spend on their own people; the host may spend on anyone. Hot-seat play is all host. */
 function mayManage(slot: number, m: CrewMember): void {
   if (slot !== 0 && m.owner !== slot) refuse('notYours');
@@ -621,11 +629,11 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       if (!list.includes(act.weapon)) refuse('badWeapon');
       if (act.kind === 'ranged') {
         if (m.ranged === act.weapon) return;
-        if (act.weapon) spend(s, weaponCost(act.weapon));
+        if (act.weapon) buyWeapon(s, m, act.weapon);
         m.ranged = act.weapon;
       } else {
         if (m.melee === act.weapon) return;
-        spend(s, weaponCost(act.weapon!));
+        buyWeapon(s, m, act.weapon!);
         m.melee = act.weapon!;
       }
       break;
@@ -762,7 +770,12 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       if (!Array.isArray(act.squad)) refuse('badSquad');
       const squad = [...new Set(act.squad)];
       if (!squad.length || squad.length > MAX_SQUAD) refuse('badSquad');
-      for (const id of squad) if (member(s, id).status !== 'ok') refuse('badSquad');
+      for (const id of squad) {
+        const m = member(s, id);
+        if (m.status !== 'ok') refuse('badSquad');
+        // A guest only brings their own people; the host decides for anyone else.
+        mayManage(slot, m);
+      }
       s.mission = { gig, squad };
       s.phase = 'mission';
       s.transcript = [];

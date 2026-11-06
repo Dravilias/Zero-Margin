@@ -357,6 +357,11 @@ export const campaignPl: Record<string, string> = {
 };
 
 export const depthEn: Record<string, string> = {
+  'camp.hireConfirm': 'Hire a {role}?',
+  'camp.hireCost': 'Cost: {cost}. You’ll have {left} left.',
+  'camp.hireNote': 'Dismissing someone later gives no refund.',
+  'camp.hireYes': 'Hire',
+  'camp.squadNone': 'You have no ready characters. Use “Play this character” in the crew panel first.',
   'save.failed': 'Saving isn’t working, so your progress may be lost when you close the game.',
   'game.eventError': 'Something couldn’t be shown, but the game carries on.',
   "duel.opponent": "Opponent",
@@ -513,6 +518,11 @@ export const depthEn: Record<string, string> = {
 };
 
 export const depthPl: Record<string, string> = {
+  'camp.hireConfirm': 'Zatrudnić: {role}?',
+  'camp.hireCost': 'Koszt: {cost}. Zostanie ci {left}.',
+  'camp.hireNote': 'Późniejsze zwolnienie nie zwraca pieniędzy.',
+  'camp.hireYes': 'Zatrudnij',
+  'camp.squadNone': 'Nie masz gotowych postaci. Najpierw użyj „Graj tą postacią” w panelu ekipy.',
   'save.failed': 'Zapisywanie nie działa, więc po zamknięciu gry postępy mogą przepaść.',
   'game.eventError': 'Czegoś nie udało się pokazać, ale gra toczy się dalej.',
   "duel.opponent": "Przeciwnik",
