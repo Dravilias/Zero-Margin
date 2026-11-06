@@ -357,6 +357,8 @@ export const campaignPl: Record<string, string> = {
 };
 
 export const depthEn: Record<string, string> = {
+  'save.failed': 'Saving isn’t working, so your progress may be lost when you close the game.',
+  'game.eventError': 'Something couldn’t be shown, but the game carries on.',
   "duel.opponent": "Opponent",
   "duel.opp.ai": "Play the computer.",
   "duel.opp.local": "Two people, one PC, hands hidden between turns.",
@@ -391,7 +393,7 @@ export const depthEn: Record<string, string> = {
   "duel.reason.cracked": "Two nodes are cracked.",
   "duel.reason.traced": "The trace found the hacker.",
   "duel.reason.deadline": "The deadline passed and the network held.",
-  "duel.reason.concede": "The other side gave up.",
+  "duel.reason.concede": "One side gave up.",
   "duel.kind.program": "Program",
   "duel.kind.trick": "Trick",
   "duel.kind.barrier": "Wall",
@@ -399,6 +401,8 @@ export const depthEn: Record<string, string> = {
   "duel.kind.tracer": "Tracer",
   "duel.kind.operation": "Operation",
   "duel.log.play": "{side}: {card}, lane {lane}.",
+  "duel.log.playGlobal": "{side}: {card}.",
+  "duel.playCard": "Play {card}",
   "duel.log.node": "Node {lane} takes {n}.",
   "duel.log.cracked": "Node {lane} is cracked!",
   "duel.log.destroyed": "{card} is destroyed in lane {lane}.",
@@ -509,6 +513,8 @@ export const depthEn: Record<string, string> = {
 };
 
 export const depthPl: Record<string, string> = {
+  'save.failed': 'Zapisywanie nie działa, więc po zamknięciu gry postępy mogą przepaść.',
+  'game.eventError': 'Czegoś nie udało się pokazać, ale gra toczy się dalej.',
   "duel.opponent": "Przeciwnik",
   "duel.opp.ai": "Graj z komputerem.",
   "duel.opp.local": "Dwie osoby, jeden komputer, karty ukryte między turami.",
@@ -543,7 +549,7 @@ export const depthPl: Record<string, string> = {
   "duel.reason.cracked": "Dwa węzły są złamane.",
   "duel.reason.traced": "Namiar znalazł hakera.",
   "duel.reason.deadline": "Termin minął, a sieć wytrzymała.",
-  "duel.reason.concede": "Druga strona się poddała.",
+  "duel.reason.concede": "Jedna ze stron się poddała.",
   "duel.kind.program": "Program",
   "duel.kind.trick": "Sztuczka",
   "duel.kind.barrier": "Mur",
@@ -551,6 +557,8 @@ export const depthPl: Record<string, string> = {
   "duel.kind.tracer": "Namierzacz",
   "duel.kind.operation": "Operacja",
   "duel.log.play": "{side}: {card}, tor {lane}.",
+  "duel.log.playGlobal": "{side}: {card}.",
+  "duel.playCard": "Zagraj: {card}",
   "duel.log.node": "Węzeł {lane} obrywa za {n}.",
   "duel.log.cracked": "Węzeł {lane} złamany!",
   "duel.log.destroyed": "{card}: zniszczone na torze {lane}.",
@@ -608,7 +616,7 @@ export const depthPl: Record<string, string> = {
   'rules.net.h': 'Hakowanie',
   'rules.net': 'Od Standardowego Kontraktu Haker płaci jedną akcję za wejście do sieci i dostaje kilka akcji sieciowych. Jego zapory najpierw pochłaniają wrogie programy. Mocno nieudany atak budzi program-łowcę, który rani go bezpośrednio.',
   'rules.campaign.h': 'Kampania',
-  'rules.campaign': 'Bierz zlecenia, zdobywaj pieniądze i poziomy, kupuj sprzęt, lecz ludzi. Wybory w scenach zmieniają historię. Pośrednik, Twarz i Garnitur mają ruch, którego mogą spróbować raz na scenę. Po końcu historii ta sama ekipa może wziąć kolejną.',
+  'rules.campaign': 'Bierz zlecenia, zdobywaj pieniądze i poziomy, kupuj sprzęt, lecz rannych. Wybory w scenach zmieniają historię. Pośrednik, Twarz i Garnitur mają ruch, którego mogą spróbować raz na scenę. Po końcu historii ta sama ekipa może wziąć kolejną.',
   'rules.humanity.h': 'Człowieczeństwo',
   'rules.humanity': 'Każdy implant kosztuje człowieczeństwo, a część nigdy nie wraca. Jego utrata obniża Nerwy. Przy zerze postać może na rundę zwrócić się przeciw ekipie. Terapia w bazie odzyskuje część.',
   'rules.duel.h': 'Pojedynek kart',

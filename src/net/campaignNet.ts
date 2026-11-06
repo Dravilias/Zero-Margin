@@ -6,7 +6,7 @@ import {
   debriefRequest, judgeRequest, outcomeRequest, parseJudgement, sceneRequest, usableNarration, writeArc, type GmLang, type LlmFailure, type LlmTransport, type RunnerContext,
 } from './gm';
 import { RelayClient, type PeerInfo, type RelayStatus } from './relayClient';
-import { GuestSession, HostSession, LocalSession, type CampaignPolicy, type GameSession, type GuestMsg, type HostMsg } from './sessions';
+import { GuestSession, HostSession, LocalSession, reportSave, type CampaignPolicy, type GameSession, type GuestMsg, type HostMsg } from './sessions';
 
 /* ---------- Saves: several campaigns can run side by side ---------- */
 
@@ -60,7 +60,10 @@ export function saveCampaign(camp: CampaignState, game: GameState | null, online
     };
     const rest = listCampaignSaves().filter((x) => x.id !== camp.id);
     localStorage.setItem(INDEX_KEY, JSON.stringify([info, ...rest]));
-  } catch { /* a failed autosave must not interrupt the game */ }
+    reportSave(true);
+  } catch {
+    reportSave(false);
+  }
 }
 
 /* ---------- What the campaign screens talk to, wherever the campaign is running ---------- */
@@ -227,8 +230,8 @@ export class CampaignHost implements CampaignController {
     let slot = players.findIndex((p) => p.peer === peer.id);
     if (event === 'join' || event === 'rejoin') {
       if (slot < 0) {
-        // Someone resuming a saved campaign takes a vacant seat, by name if they had one.
-        slot = players.findIndex((p, i) => i > 0 && !p.peer && p.name === peer.name);
+        // Someone coming back, after a reload or when a saved campaign resumes, gets their own seat back by name.
+        slot = players.findIndex((p, i) => i > 0 && !p.connected && p.name === peer.name);
         if (slot < 0) slot = players.findIndex((p, i) => i > 0 && !p.peer);
         if (slot < 0 && players.length < MAX_PLAYERS) slot = players.push({ name: peer.name, peer: peer.id, connected: true }) - 1;
       }

@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RelayClient, RelayError } from '../src/net/relayClient';
-import { GuestSession, GuestTable, HostSession, HostTable, type GameSession } from '../src/net/sessions';
+import { GuestSession, GuestTable, HostSession, HostTable, setSaveListener, type GameSession } from '../src/net/sessions';
 import { newTable } from '../src/net/table';
 // @ts-expect-error the relay is plain JavaScript so it can run in a small container
 import { startRelay } from '../relay/server.mjs';
 import { chooseAction } from '../src/engine/ai';
 import { Rand } from '../src/engine/rng';
 import { createCampaign, starterCrew } from '../src/engine/campaign';
-import { CampaignGuest, CampaignHost } from '../src/net/campaignNet';
+import { CampaignGuest, CampaignHost, saveCampaign } from '../src/net/campaignNet';
 import { DuelGuest, DuelHost } from '../src/net/duelNet';
 
 // Sessions autosave through localStorage, which does not exist under Node.
@@ -277,6 +277,33 @@ describe('an online campaign', () => {
     friend.dispose();
   }, 60000);
 
+  it('gives a player back their seat and characters after a reload', async () => {
+    const { host, guests: [friend] } = await start(['Friend']);
+    friend.dispatch({ a: 'setOwner', id: 1, slot: 1 });
+    await until(() => host.state.crew.find((m) => m.id === 1)!.owner === 1);
+    let hostSession: any = null;
+    host.onMission = (s) => { hostSession = s; };
+    host.dispatch({ a: 'takeGig', gig: host.state.offers[0].id, squad: [1, 2] });
+    await until(() => !!hostSession);
+    // A reload cuts the connection without saying goodbye, then joins again under a new id.
+    const old = friend['relay'] as any;
+    old.onDrop = () => {};
+    old.ws.close();
+    await until(() => hostSession.state.owners.s0u0 === 'host');
+    const r = new RelayClient(url);
+    await r.join(host.code!, 'Friend');
+    const table = new GuestTable(r, host.code!);
+    const back = await new Promise<CampaignGuest>((res) => { table.onCampaign = (rc, first) => res(new CampaignGuest(rc, first)); });
+    expect(back.mySlot).toBe(1);
+    await until(() => !!back.session);
+    expect(host.state.players).toHaveLength(2);
+    expect(hostSession.state.owners.s0u0).toBe(r.peerId);
+    expect(back.session!.mayControl('s0u0')).toBe(true);
+    expect(back.session!.mayControl('s0u1')).toBe(false);
+    host.dispose();
+    back.dispose();
+  }, 20000);
+
   it('hands a friend game master the enemy side, and covers a player who drops', async () => {
     const { host, guests: [gm, player] } = await start(['Gamemaster', 'Player']);
     host.dispatch({ a: 'setGm', slot: 1 });
@@ -339,3 +366,19 @@ describe('an online duel', () => {
     guest.dispose();
   });
 });
+
+describe('saving', () => {
+  it('tells the player when saving stops working, and when it recovers', () => {
+    const results: boolean[] = [];
+    setSaveListener((ok) => results.push(ok));
+    const camp = createCampaign({ id: 's', mode: 'endless', ruleset: 'quick', crewName: 'B', seed: 1, hostName: 'H', crew: starterCrew(1), arc: null, llm: false, online: false, gm: 'computer' });
+    const store = (globalThis as any).localStorage;
+    (globalThis as any).localStorage = { getItem: () => null, removeItem: () => {}, setItem: () => { throw new Error('full'); } };
+    saveCampaign(camp, null, false);
+    (globalThis as any).localStorage = store;
+    saveCampaign(camp, null, false);
+    setSaveListener(null);
+    expect(results).toEqual([false, true]);
+  });
+});
+

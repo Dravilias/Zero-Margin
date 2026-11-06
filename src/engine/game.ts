@@ -1049,12 +1049,40 @@ function nextDeployer(s: GameState, r: Rand, ev: GameEvent[]): void {
   startRound(s, r, ev);
 }
 
+const GRENADE_KINDS: readonly unknown[] = ['frag', 'smoke', 'emp'];
+const FOCUS_KINDS: readonly unknown[] = ['aim', 'damage', 'guard', 'init'];
+const AIM_SPOTS: readonly unknown[] = ['head', 'torso', 'arms', 'legs'];
+
+/** Actions can arrive from another player's game, so their shape isn't taken on trust. */
+function checkShape(a: Action): void {
+  const f = a as unknown as Record<string, unknown> | null;
+  if (!f || typeof f !== 'object' || typeof f.type !== 'string') illegal('badAction');
+  for (const k of ['x', 'y', 'terminalId']) if (f![k] !== undefined && !Number.isInteger(f![k])) illegal('badAction');
+  for (const k of ['unitId', 'targetId']) if (f![k] !== undefined && typeof f![k] !== 'string') illegal('badAction');
+  if (f!.type === 'grenade' && !GRENADE_KINDS.includes(f!.kind)) illegal('badAction');
+  if (f!.type === 'focus' && !FOCUS_KINDS.includes(f!.kind)) illegal('badAction');
+  if (f!.aimedAt !== undefined && !AIM_SPOTS.includes(f!.aimedAt)) illegal('badAction');
+  if (f!.mode !== undefined && f!.mode !== 'single' && f!.mode !== 'burst') illegal('badAction');
+}
+
 function dispatch(s: GameState, r: Rand, ev: GameEvent[], a: Action, side: number): void {
+  checkShape(a);
   if (a.type === 'concede') {
     if (s.phase === 'over' || s.conceded[side]) illegal('alreadyOver');
     s.conceded[side] = true;
     s.ready[side] = true;
-    for (const u of s.units) if (u.side === side) u.state = 'dead';
+    for (const u of s.units) {
+      if (u.side !== side) continue;
+      // The board treats everyone as gone, but those still alive got out; the dead stay dead.
+      if (u.state !== 'dead') u.retreated = true;
+      if (s.core && s.core.carrier === u.id) {
+        s.core.carrier = null;
+        s.core.x = u.x;
+        s.core.y = u.y;
+        ev.push({ t: 'core', unit: u.id, what: 'drop', x: u.x, y: u.y });
+      }
+      u.state = 'dead';
+    }
     ev.push({ t: 'concede', side });
     if (checkElimination(s, ev, 'concede')) return;
     if (s.phase === 'deploy') {

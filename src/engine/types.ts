@@ -162,6 +162,8 @@ export interface Unit {
   unstable: boolean;
   /** Who this unit really fights for, while it has snapped. */
   snapped: { side: number; team: number } | null;
+  /** Pulled out alive when their side conceded. */
+  retreated?: boolean;
 }
 
 export interface Terminal { id: number; x: number; y: number; owner: number | null }

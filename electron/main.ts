@@ -8,6 +8,7 @@ import { fakeLlmReply, runSmoke } from './smoke';
 const smokeTest = process.env.ZM_SMOKE_TEST === '1';
 const fakeLlm = smokeTest && process.env.ZM_SMOKE_CAMPAIGN === '1';
 // A test run gets a throwaway profile, so it can't touch real settings, saves or a real key.
+if (process.env.ZM_SMOKE_LEAK === '1') app.commandLine.appendSwitch('js-flags', '--expose-gc');
 if (smokeTest) app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'zm-smoke-')));
 
 function createWindow(): BrowserWindow {
@@ -121,7 +122,18 @@ function registerLlm(): void {
   })));
 }
 
+// Two copies sharing one profile can't both save, so a second launch just brings the first one forward.
+const firstCopy = app.requestSingleInstanceLock();
+if (!firstCopy) app.quit();
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
+
 app.whenReady().then(() => {
+  if (!firstCopy) return;
   // The game needs no camera, microphone or location; copying the join code is the only permission it uses.
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'clipboard-sanitized-write'));
   ipcMain.on('zm-quit', () => app.quit());

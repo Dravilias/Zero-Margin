@@ -60,6 +60,9 @@ export class Board {
   private dpr = 1;
   private destroyed = false;
   private lastDraw = 0;
+  private observer: ResizeObserver;
+  private frameId = 0;
+  private endDrag = () => { this.drag = null; };
 
   onTileClick: ((x: number, y: number) => void) | null = null;
   onTileHover: ((x: number, y: number) => void) | null = null;
@@ -69,15 +72,35 @@ export class Board {
     this.canvas.className = 'board-canvas';
     container.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d')!;
-    new ResizeObserver(() => this.resize()).observe(container);
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(container);
     this.resize();
     for (let i = 0; i < 90; i++) this.rain.push({ x: Math.random(), y: Math.random(), v: 0.5 + Math.random(), l: 8 + Math.random() * 16 });
     this.bindInput();
-    requestAnimationFrame((t) => this.frame(t));
+    this.frameId = requestAnimationFrame((t) => this.frame(t));
   }
 
+  /** Lets go of everything, so a finished battle's big art canvases don't outlive it. */
   destroy(): void {
+    if (this.destroyed) return;
     this.destroyed = true;
+    cancelAnimationFrame(this.frameId);
+    this.observer.disconnect();
+    window.removeEventListener('mouseup', this.endDrag);
+    this.onTileClick = null;
+    this.onTileHover = null;
+    // Shrinking a canvas frees its pixels right away, without waiting for garbage collection.
+    for (const canvas of [this.art?.canvas, this.viewLayer, this.canvas]) {
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+    }
+    this.art = null;
+    this.viewLayer = null;
+    this.state = null;
+    this.anims = [];
+    this.floats = [];
   }
 
   private resize(): void {
@@ -142,7 +165,7 @@ export class Board {
         e.preventDefault();
       }
     });
-    window.addEventListener('mouseup', () => { this.drag = null; });
+    window.addEventListener('mouseup', this.endDrag);
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('click', (e) => {
       const p = pos(e);
@@ -168,6 +191,7 @@ export class Board {
   }
 
   setState(s: GameState): void {
+    if (this.destroyed) return;
     this.state = s;
     if (s.map.id !== this.mapId) {
       this.mapId = s.map.id;
@@ -372,7 +396,7 @@ export class Board {
 
   private frame(t: number): void {
     if (this.destroyed) return;
-    requestAnimationFrame((n) => this.frame(n));
+    this.frameId = requestAnimationFrame((n) => this.frame(n));
     const animating = this.anims.length > 0 || this.floats.length > 0 || this.tokenPos.size > 0 || this.shake.size > 0;
     // A still board with rain only needs a lower frame rate.
     if (!animating && t - this.lastDraw < 33) return;

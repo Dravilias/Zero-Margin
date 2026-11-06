@@ -478,3 +478,63 @@ describe('depth rules', () => {
     expect(snapped).toBeGreaterThan(0);
   });
 });
+
+describe('actions from other players are not trusted', () => {
+  const online = () => {
+    let s = newCamp({ mode: 'endless', arc: null, online: true });
+    s = act(s, { a: 'setPlayers', players: [...s.players, { name: 'F', peer: 'p', connected: true }] });
+    return act(s, { a: 'setOwner', id: 1, slot: 1 }, 1);
+  };
+
+  it('refuses names inherited from Object, so cash can never become NaN', () => {
+    const s = online();
+    expect(refused(s, { a: 'grenade', id: 1, kind: 'constructor' as never }, 1)).toBe('badGrenade');
+    expect(refused(s, { a: 'chrome', id: 1, chrome: 'constructor' as never }, 1)).toBe('badChrome');
+    expect(refused(s, { a: 'setOwner', id: 2, slot: 'constructor' as never }, 1)).toBe('badPlayer');
+    expect(s.cash).toBe(1000);
+  });
+
+  it('refuses malformed actions instead of throwing', () => {
+    const s = online();
+    expect(refused(s, null as never, 1)).toBe('badAction');
+    expect(refused(s, { a: 'takeGig', gig: s.offers[0].id, squad: {} as never }, 1)).toBe('badSquad');
+    expect(refused(s, { a: 'takeGig', gig: s.offers[0].id, squad: 5 as never }, 1)).toBe('badSquad');
+  });
+
+  it('only lets a player pay for healing their own people', () => {
+    const s = online();
+    const hurt = { ...s, crew: s.crew.map((m) => ({ ...m, status: 'wounded' as const, humanity: 10, injuries: ['brokenArm' as const] })) };
+    for (const a of [{ a: 'clinic', id: 2 }, { a: 'therapy', id: 2 }, { a: 'treat', id: 2, injury: 'brokenArm' }] as CampaignAction[]) {
+      expect(refused(hurt, a, 1)).toBe('notYours');
+      expect(refused(hurt, { ...a, id: 1 } as CampaignAction, 1)).toBeUndefined();
+      expect(refused(hurt, a, 0)).toBeUndefined();
+    }
+  });
+
+  it('keeps the dead dead when the rest of the crew retreats on the Full Contract', () => {
+    let s = newCamp({ mode: 'endless', arc: null, ruleset: 'full' });
+    s = act(s, { a: 'takeGig', gig: s.offers[0].id, squad: [1, 2] });
+    const game = buildMission(s);
+    game.units.find((u) => u.id === 's0u0')!.state = 'dead';
+    const after = applyAction(game, { type: 'concede' }, 0).state;
+    s = act(s, { a: 'finishMission', result: missionResult(after) });
+    expect(s.crew.find((m) => m.id === 1)!.status).toBe('dead');
+    expect(s.crew.find((m) => m.id === 2)!.status).toBe('wounded');
+  });
+
+  it('refuses malformed battle actions, and a conceding carrier drops the core', () => {
+    let s = newCamp({ mode: 'endless', arc: null });
+    s = act(s, { a: 'takeGig', gig: s.offers[0].id, squad: [1, 2] });
+    const game = buildMission(s);
+    const side = game.activeSide;
+    const u = game.units.find((x) => x.side === side)!;
+    expect(applyAction(game, null as never, side).error).toBe('badAction');
+    expect(applyAction(game, { type: 'place', unitId: u.id, x: 1.25, y: 0.75 }, side).error).toBe('badAction');
+    expect(applyAction(game, { type: 'place', unitId: u.id, x: '2' as never, y: 3 }, side).error).toBe('badAction');
+    expect(applyAction(game, { type: 'grenade', kind: 'constructor' as never, x: 1, y: 1 }, side).error).toBe('badAction');
+    expect(applyAction(game, { type: 'focus', kind: 'bogus' as never }, side).error).toBe('badAction');
+    const heist = { ...game, core: { x: u.x, y: u.y, carrier: u.id } };
+    const out = applyAction(heist, { type: 'concede' }, side).state;
+    expect(out.core!.carrier).toBeNull();
+  });
+});

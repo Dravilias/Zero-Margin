@@ -56,6 +56,15 @@ export interface GameSession {
 
 const SAVE_KEY = 'zm.save.v2';
 
+/* Saving must never interrupt a game, but a player has to hear when it stops working. */
+let saveListener: ((ok: boolean) => void) | null = null;
+export function setSaveListener(fn: ((ok: boolean) => void) | null): void {
+  saveListener = fn;
+}
+export function reportSave(ok: boolean): void {
+  saveListener?.(ok);
+}
+
 export interface SaveData { state: GameState; online: boolean; humanNames: string[]; savedAt: number }
 
 export function loadSave(): SaveData | null {
@@ -83,7 +92,10 @@ function writeSave(state: GameState, online: boolean): void {
     }
     const data: SaveData = { state, online, humanNames: state.cfg.sides.map((s) => s.name), savedAt: Date.now() };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  } catch { /* a failed autosave must not interrupt the game */ }
+    reportSave(true);
+  } catch {
+    reportSave(false);
+  }
 }
 
 const AI_DELAY_MS = 350;

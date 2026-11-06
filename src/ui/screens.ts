@@ -7,7 +7,7 @@ import { createTutorialGame } from '../engine/tutorial';
 import type { ChromeId, FactionId, GrenadeKind, Loadout, RoleId, WeaponId } from '../engine/types';
 import { RelayClient, RelayError } from '../net/relayClient';
 import {
-  GuestTable, HostTable, LocalSession, LocalTable, clearSave, loadSave, resumeHosted, type GameSession, type TableController,
+  GuestTable, HostTable, LocalSession, LocalTable, clearSave, loadSave, resumeHosted, setSaveListener, type GameSession, type TableController,
 } from '../net/sessions';
 import {
   AI_OPTIONS, POINT_OPTIONS, ROUND_OPTIONS, RULESET_OPTIONS, SCENARIO_OPTIONS, SIZE_OPTIONS, THEME_OPTIONS, newTable, randomSeed, startProblems,
@@ -27,8 +27,16 @@ import { Coach, TutorialSession } from './tutorial';
 let root: HTMLElement;
 let currentView: GameView | null = null;
 
+/** Stays on screen for as long as saving keeps failing. */
+function showSaveState(ok: boolean): void {
+  const old = document.querySelector('.save-warning');
+  if (ok) old?.remove();
+  else if (!old) document.body.append(el('div.save-warning', { role: 'alert' }, t('save.failed')));
+}
+
 export function initScreens(r: HTMLElement): void {
   root = r;
+  setSaveListener(showSaveState);
   initCampaignScreens({
     screen,
     mountGame: (session, nav) => {
@@ -46,8 +54,14 @@ export function initScreens(r: HTMLElement): void {
   menuScreen();
 }
 
+/** Runs when the current screen goes away. */
+let leaveScreen: (() => void) | null = null;
+
 function screen(...children: (HTMLElement | null)[]): void {
+  currentView?.dispose();
   currentView = null;
+  leaveScreen?.();
+  leaveScreen = null;
   clear(root);
   root.append(...children.filter((c): c is HTMLElement => !!c));
 }
@@ -280,7 +294,7 @@ export function menuScreen(): void {
   const menu = el('div.menu', {},
     art,
     rain,
-    el('div.menu-version', {}, 'v0.6.0'),
+    el('div.menu-version', {}, 'v0.6.3'),
     el('div.menu-col', {},
       el('div', {}, el('h1.logo', {}, 'ZERO MARGIN'), el('p.tagline', {}, t('app.tagline'))),
       el('nav.menu-list', {},
@@ -305,7 +319,13 @@ export function menuScreen(): void {
     if (art.isConnected) drawMenuArt(art);
   };
   void document.fonts.load('900 40px "Big Shoulders Display"').then(draw);
-  new ResizeObserver(draw).observe(menu);
+  const observer = new ResizeObserver(draw);
+  observer.observe(menu);
+  leaveScreen = () => {
+    observer.disconnect();
+    art.width = 0;
+    art.height = 0;
+  };
   runMenuRain(rain);
 }
 
@@ -451,7 +471,8 @@ function tableScreen(ctl: TableController): void {
       ctl.update((tb) => { tb.settings.seed = randomSeed(); });
       tableScreen(ctl);
     } : undefined;
-    clearSave();
+    // Joining someone else's game mustn't cost this player their own saved one.
+    if (session.isHost) clearSave();
     playSession(session, again);
   };
   const render = () => {

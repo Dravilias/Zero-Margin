@@ -47,6 +47,8 @@ const DEPTH: Record<RulesetId, { tier: number; nodeHp: number; traceMax: number;
   standard: { tier: 1, nodeHp: 8, traceMax: 10, rounds: 12 },
   full: { tier: 2, nodeHp: 10, traceMax: 12, rounds: 14 },
 };
+/** Cards that don't act on any one lane. */
+export const NO_LANE: CardId[] = ['scrub', 'cache', 'dredge', 'audit', 'overtime'];
 export const LANES = 3;
 export const MAX_IN_LANE = 3;
 const HAND_LIMIT = 7;
@@ -217,6 +219,12 @@ function place(s: DuelState, side: DuelSide, card: CardId, lane: number): void {
 }
 
 function step(s: DuelState, act: DuelAction, side: DuelSide): void {
+  // Actions can arrive from the other player's game, so their shape isn't taken on trust.
+  if (!act || typeof act !== 'object') bad('badAction');
+  if (act.a === 'play') {
+    if (!Number.isInteger(act.hand) || !Number.isInteger(act.lane)) bad('badAction');
+    if ((act.target !== undefined && !Number.isInteger(act.target)) || (act.to !== undefined && !Number.isInteger(act.to))) bad('badAction');
+  } else if (act.a !== 'end' && act.a !== 'concede') bad('badAction');
   if (s.winner) bad('over');
   if (act.a === 'concede') {
     s.winner = other(side);
@@ -233,12 +241,12 @@ function step(s: DuelState, act: DuelAction, side: DuelSide): void {
       corpActs(s);
       checkEnd(s);
       if (s.winner) return;
-      s.round += 1;
-      if (s.round > s.maxRounds) {
+      if (s.round >= s.maxRounds) {
         s.winner = 'corp';
         s.reason = 'deadline';
         return;
       }
+      s.round += 1;
       startTurn(s, 'hacker');
     }
     return;
@@ -248,6 +256,9 @@ function step(s: DuelState, act: DuelAction, side: DuelSide): void {
   const def = CARDS[id];
   if (def.cost > p.bandwidth) bad('noBandwidth');
   const l = s.lanes[act.lane] ?? bad('badLane');
+  // The card leaves the hand first, so it doesn't take up room for what it draws.
+  p.bandwidth -= def.cost;
+  p.hand.splice(act.hand, 1);
   switch (id) {
     case 'overload': {
       const t = l.corp[act.target ?? 0] ?? bad('badTarget');
@@ -289,9 +300,8 @@ function step(s: DuelState, act: DuelAction, side: DuelSide): void {
     default:
       place(s, side, id, act.lane);
   }
-  p.bandwidth -= def.cost;
-  p.hand.splice(act.hand, 1);
-  say(s, 'duel.log.play', { side: `duel.side.${side}`, card: cardKey(id), lane: act.lane + 1 });
+  if (NO_LANE.includes(id)) say(s, 'duel.log.playGlobal', { side: `duel.side.${side}`, card: cardKey(id) });
+  else say(s, 'duel.log.play', { side: `duel.side.${side}`, card: cardKey(id), lane: act.lane + 1 });
   checkEnd(s);
 }
 

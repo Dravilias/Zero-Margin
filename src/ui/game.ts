@@ -49,6 +49,7 @@ export class GameView {
   private queue: GameUpdate[] = [];
   private pumping = false;
   private disposed = false;
+  private layoutObserver: ResizeObserver | null = null;
   private pending = false;
   private selected: string | null = null;
   private mode: Mode = { k: 'default' };
@@ -98,9 +99,21 @@ export class GameView {
   }
 
   dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
     window.removeEventListener('keydown', this.keyHandler);
+    this.layoutObserver?.disconnect();
     this.board.destroy();
+    this.dice.destroy();
+    // A campaign's connection can outlive this screen, so nothing it holds should keep the screen alive.
+    const s = this.session;
+    s.onUpdate = null;
+    s.onChat = null;
+    s.onNotice = null;
+    s.onStatus = null;
+    s.onClosed = null;
+    if (s instanceof GuestSession) s.onRejected = null;
+    this.queue = [];
   }
 
   /* ---------- Layout ---------- */
@@ -154,7 +167,8 @@ export class GameView {
     this.board.onTileClick = (x, y) => this.onTile(x, y);
     this.board.onTileHover = (x, y) => this.onHover(x, y);
     this.layoutBoard(game);
-    new ResizeObserver(() => this.layoutBoard(game)).observe(game);
+    this.layoutObserver = new ResizeObserver(() => this.layoutBoard(game));
+    this.layoutObserver.observe(game);
     void s;
   }
 
@@ -233,7 +247,13 @@ export class GameView {
       const { events, state } = this.queue.shift()!;
       for (const e of events) {
         if (this.disposed) return;
-        await this.playEvent(e);
+        // A bad animation mustn't freeze the game: the real state below still replaces whatever it left behind.
+        try {
+          await this.playEvent(e);
+        } catch (err) {
+          console.error('Could not show game event', e, err);
+          this.toast(t('game.eventError'));
+        }
       }
       // After the animations, the real state replaces anything patched along the way.
       this.display = structuredClone(state);

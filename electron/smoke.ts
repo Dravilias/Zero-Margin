@@ -9,6 +9,7 @@ import path from 'node:path';
  *   ZM_SMOKE_HOLD=ms   keep the window open afterwards, for screenshots
  *   ZM_SMOKE_ONLINE=1  host a real online table and play to round 3 with whoever joins
  *   ZM_SMOKE_CAMPAIGN=1  play a campaign start to finish of one job, against a pretend model server
+ *   ZM_SMOKE_LEAK=1      enter and leave a battle repeatedly and report memory, to catch leaks
  *   ZM_SMOKE_SHOTS=dir   save screenshots of the campaign screens there
  * Every run uses a throwaway profile, so it can't touch real settings or saves.
  */
@@ -119,6 +120,29 @@ const ONLINE_CHECK = `
   })()
 `;
 
+const LEAK_CHECK = `
+  (async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const button = (re) => [...document.querySelectorAll('button')].find((b) => re.test(b.textContent));
+    await document.fonts.ready;
+    await wait(500);
+    for (let i = 1; i <= 15; i++) {
+      button(/New skirmish|Nowa potyczka/).click();
+      await wait(200);
+      document.querySelector('.btn-start').click();
+      await wait(1500);
+      [...document.querySelectorAll('.topbar button')].pop().click();
+      await wait(100);
+      [...document.querySelectorAll('.modal button')].pop().click();
+      await wait(300);
+      if (window.gc) window.gc();
+      await wait(200);
+      console.log('ZMLOG MEM ' + i);
+    }
+    return { passed: true };
+  })()
+`;
+
 const CAMPAIGN_CHECK = `
   (async () => {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -219,6 +243,9 @@ export function runSmoke(win: BrowserWindow): void {
     else if (e.message.startsWith('ZMLOG SHOT ')) {
       const dir = process.env.ZM_SMOKE_SHOTS;
       if (dir) void win.webContents.capturePage().then((img) => writeFileSync(`${dir}/${e.message.slice(11)}.png`, img.toPNG()));
+    } else if (e.message.startsWith('ZMLOG MEM ')) {
+      const parts = app.getAppMetrics().map((m) => `${m.type}=${Math.round(m.memory.workingSetSize / 1024)}`);
+      report(`${e.message.slice(6)} MB ${parts.join(' ')}`);
     } else if (e.message.startsWith('ZMLOG ')) report(e.message.slice(6));
   });
   win.webContents.once('did-fail-load', (_e, code, desc) => {
@@ -227,7 +254,7 @@ export function runSmoke(win: BrowserWindow): void {
   });
   win.webContents.once('did-finish-load', async () => {
     report(`started on ${process.platform} ${process.arch}, electron ${process.versions.electron}, app at ${app.getAppPath()}`);
-    const check = process.env.ZM_SMOKE_CAMPAIGN === '1' ? CAMPAIGN_CHECK : process.env.ZM_SMOKE_ONLINE === '1' ? ONLINE_CHECK : LOCAL_CHECK;
+    const check = process.env.ZM_SMOKE_LEAK === '1' ? LEAK_CHECK : process.env.ZM_SMOKE_CAMPAIGN === '1' ? CAMPAIGN_CHECK : process.env.ZM_SMOKE_ONLINE === '1' ? ONLINE_CHECK : LOCAL_CHECK;
     let result: { passed?: boolean } = {};
     try {
       result = await win.webContents.executeJavaScript(check);

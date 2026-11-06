@@ -311,9 +311,17 @@ const crewLoadout = (m: CrewMember): Loadout => {
 
 export const crewValue = (crew: CrewMember[]): number => rosterCost('union', crew.map(crewLoadout)) + crew.reduce((sum, m) => sum + (m.level - 1) * 4, 0);
 
-/** Threat 1 is a little weaker than the crew, and each step adds about a tenth. */
+/** What this many people are worth with no gear or experience. */
+const BARE_VALUE_PER_PERSON = 22;
+
+/**
+ * Threat 1 is weaker than a fresh crew, and each step adds a little, since the computer also plays better from threat 3.
+ * Enemies only catch up with part of what the crew has earned, so gear and levels really do make it stronger.
+ */
 export function enemyPoints(squad: CrewMember[], threat: number): number {
-  return Math.max(40, Math.round(crewValue(squad) * (0.8 + 0.1 * threat)));
+  const bare = squad.length * BARE_VALUE_PER_PERSON;
+  const earned = Math.max(0, crewValue(squad) - bare);
+  return Math.max(40, Math.round((bare + earned * 0.25) * (0.72 + 0.05 * threat)));
 }
 
 export function enemyRoster(faction: FactionId, points: number, threat: number): Loadout[] {
@@ -336,7 +344,7 @@ export function enemyRoster(faction: FactionId, points: number, threat: number):
 }
 
 export function aiLevelFor(threat: number): AiLevel {
-  return threat <= 1 ? 'easy' : threat >= 5 ? 'hard' : 'normal';
+  return threat <= 2 ? 'easy' : threat >= 6 ? 'hard' : 'normal';
 }
 
 const sizeFor = (n: number): MapSize => (n <= 3 ? 'small' : n <= 5 ? 'medium' : 'large');
@@ -386,9 +394,9 @@ const LASTING: InjuryId[] = ['brokenArm', 'brokenLeg', 'optics'];
 export function missionResult(game: GameState): MissionResult {
   const crew = game.units.filter((u) => !u.isDrone && /^s0u\d+$/.test(u.id) && Number(u.id.slice(3)) < 100);
   crew.sort((a, b) => Number(a.id.slice(3)) - Number(b.id.slice(3)));
-  // Conceding marks a whole side dead on the board, but in a campaign it means the crew pulled out and dragged its people along.
+  // Conceding marks a whole side dead on the board, but in a campaign the crew pulls out and drags its living along.
   const fled = game.conceded[0];
-  return { won: game.winner === 0, fled, members: crew.map((u) => ({ state: fled && u.state === 'dead' ? 'down' : u.state, kills: u.kills, dealt: u.dealt, injuries: u.injuries.filter((i) => LASTING.includes(i)) })) };
+  return { won: game.winner === 0, fled, members: crew.map((u) => ({ state: u.retreated ? 'down' : u.state, kills: u.kills, dealt: u.dealt, injuries: u.injuries.filter((i) => LASTING.includes(i)) })) };
 }
 
 function applyResult(s: CampaignState, result: MissionResult): void {
@@ -551,7 +559,7 @@ function member(s: CampaignState, id: number): CrewMember {
 }
 
 function spend(s: CampaignState, amount: number): void {
-  if (s.cash < amount) refuse('noCash');
+  if (!Number.isFinite(amount) || s.cash < amount) refuse('noCash');
   s.cash -= amount;
 }
 
@@ -567,6 +575,8 @@ function hubOnly(s: CampaignState): void {
 const clean = (text: string, max: number): string => String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?: FreeRoll }): void {
+  // Actions can arrive from another player's game, so their shape isn't taken on trust.
+  if (!act || typeof act !== 'object' || typeof act.a !== 'string') refuse('badAction');
   if (HOST_ONLY.has(act.a) && slot !== 0) refuse('hostOnly');
   const isGm = s.gmSlot !== null && s.gmSlot === slot;
   switch (act.a) {
@@ -596,7 +606,7 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
     }
     case 'setOwner': {
       const m = member(s, act.id);
-      if (!s.players[act.slot] || act.slot === s.gmSlot) refuse('badPlayer');
+      if (!Number.isInteger(act.slot) || !s.players[act.slot] || act.slot === s.gmSlot) refuse('badPlayer');
       // Anyone may take a character the host is covering; only the host can move one between friends.
       if (slot !== 0 && !(act.slot === slot && m.owner === 0)) refuse('notYours');
       m.owner = act.slot;
@@ -624,11 +634,11 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       hubOnly(s);
       const m = member(s, act.id);
       mayManage(slot, m);
+      if (!Object.hasOwn(CHROME_COST, act.chrome)) refuse('badChrome');
       if (m.chrome.includes(act.chrome)) {
         m.chrome = m.chrome.filter((c) => c !== act.chrome);
         break;
       }
-      if (CHROME_COST[act.chrome] === undefined) refuse('badChrome');
       if (m.chrome.length >= MAX_CHROME) refuse('chromeFull');
       spend(s, chromeCost(act.chrome));
       m.chrome.push(act.chrome);
@@ -645,7 +655,8 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       hubOnly(s);
       const m = member(s, act.id);
       mayManage(slot, m);
-      if (m.extra[act.kind] === undefined || m.extra[act.kind] >= 3) refuse('tooMany');
+      if (!Object.hasOwn(GRENADE_COST, act.kind)) refuse('badGrenade');
+      if (m.extra[act.kind] >= 3) refuse('tooMany');
       spend(s, grenadeCost(act.kind));
       m.extra[act.kind] += 1;
       break;
@@ -653,6 +664,7 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
     case 'clinic': {
       hubOnly(s);
       const m = member(s, act.id);
+      mayManage(slot, m);
       if (m.status !== 'wounded') refuse('notWounded');
       spend(s, clinicCost(m));
       m.status = 'ok';
@@ -661,6 +673,7 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
     case 'therapy': {
       hubOnly(s);
       const m = member(s, act.id);
+      mayManage(slot, m);
       if (m.humanity >= m.humanityMax) refuse('notNeeded');
       spend(s, THERAPY_COST);
       const r = new Rand(s.rng);
@@ -671,6 +684,7 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
     case 'treat': {
       hubOnly(s);
       const m = member(s, act.id);
+      mayManage(slot, m);
       if (!m.injuries.includes(act.injury)) refuse('notNeeded');
       spend(s, TREAT_COST);
       m.injuries = m.injuries.filter((i) => i !== act.injury);
@@ -745,6 +759,7 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       hubOnly(s);
       if (isGm) refuse('gmOnly');
       const gig = availableGigs(s).find((g) => g.id === act.gig) ?? refuse('noGig');
+      if (!Array.isArray(act.squad)) refuse('badSquad');
       const squad = [...new Set(act.squad)];
       if (!squad.length || squad.length > MAX_SQUAD) refuse('badSquad');
       for (const id of squad) if (member(s, id).status !== 'ok') refuse('badSquad');

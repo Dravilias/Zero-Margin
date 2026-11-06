@@ -50,6 +50,29 @@ describe('card duel', () => {
     expect(s.lanes[0].hacker.map((x) => x.card)).toEqual(['ghost']);
   });
 
+  it('never counts past the last round, and a draw card leaves room for what it draws', () => {
+    let s = createDuel(3, 'quick');
+    s.round = s.maxRounds;
+    s.active = 'corp';
+    s = applyDuel(s, { a: 'end' }, 'corp').state;
+    expect(s.winner).toBe('corp');
+    expect(s.round).toBe(s.maxRounds);
+    let d = createDuel(3, 'standard');
+    d.hacker.hand = ['dredge', 'spike', 'spike', 'spike', 'spike', 'spike'];
+    d.hacker.bandwidth = 5;
+    d = applyDuel(d, { a: 'play', hand: 0, lane: 0 }, 'hacker').state;
+    expect(d.hacker.hand).toHaveLength(7);
+    expect(d.log[d.log.length - 1].k).toBe('duel.log.playGlobal');
+  });
+
+  it('refuses malformed actions from the other player', () => {
+    const s = createDuel(3, 'standard');
+    expect(applyDuel(s, null as never, 'hacker').error).toBe('badAction');
+    expect(applyDuel(s, { a: 'play', hand: 'constructor' as never, lane: 0 }, 'hacker').error).toBe('badAction');
+    expect(applyDuel(s, { a: 'play', hand: 0, lane: 0, target: 'constructor' as never }, 'hacker').error).toBe('badAction');
+    expect(applyDuel(s, { a: 'nope' } as never, 'hacker').error).toBe('badAction');
+  });
+
   it('has names and descriptions for every card in both languages', () => {
     for (const id of CARD_IDS) for (const d of [DICTIONARIES.en, DICTIONARIES.pl]) {
       expect(d[`card.${id}`]).toBeTruthy();

@@ -1,4 +1,4 @@
-import { CARDS, crackedCount, type CardId, type DuelSide } from '../engine/duel';
+import { CARDS, MAX_IN_LANE, NO_LANE, crackedCount, type CardId, type DuelSide } from '../engine/duel';
 import type { RulesetId } from '../engine/types';
 import { DuelGuest, DuelHost, DuelLocal, type DuelController } from '../net/duelNet';
 import { RelayClient } from '../net/relayClient';
@@ -73,6 +73,12 @@ export function joinDuel(relay: RelayClient, first: Extract<HostMsg, { k: 'duel'
 }
 
 const cardName = (id: CardId) => t(`card.${id}`);
+const PLACED = new Set(['program', 'barrier', 'sentry', 'tracer']);
+
+/** Cards that stay in a lane, or a program being moved there, need a free spot in it. */
+function laneFull(id: CardId, lane: { hacker: unknown[]; corp: unknown[] }, side: DuelSide): boolean {
+  return (PLACED.has(CARDS[id].kind) || id === 'reroute') && lane[side].length >= MAX_IN_LANE;
+}
 
 function run(ctl: DuelController): void {
   let chosen: number | null = null;
@@ -159,7 +165,7 @@ function run(ctl: DuelController): void {
       el('div.duel-node', {}, el('span', {}, t('duel.node', { n: i + 1 })), el('b', {}, l.node <= 0 ? t('duel.crackedOne') : `${l.node}/${s.nodeMax}`)),
       el('div.duel-row', {}, el('h3', {}, t('duel.side.corp')), l.corp.map((x, n) => token(x, i, n, viewer === 'corp'))),
       el('div.duel-row', {}, el('h3', {}, t('duel.side.hacker')), l.hacker.map((x, n) => token(x, i, n, viewer === 'hacker'))),
-      mine && chosenId && l.node > 0 && chosenId !== 'overload' ? el('button.btn-quiet', { onclick: () => play(i) }, t(chosenId === 'reroute' ? 'duel.moveHere' : 'duel.playHere')) : null,
+      mine && chosenId && l.node > 0 && chosenId !== 'overload' && !NO_LANE.includes(chosenId) && !laneFull(chosenId, l, viewer) ? el('button.btn-quiet', { onclick: () => play(i) }, t(chosenId === 'reroute' ? 'duel.moveHere' : 'duel.playHere')) : null,
       ))),
       el('div.duel-foot', {},
         el('div.duel-hand', {}, player.hand.map((id, i) => el('button.duel-card', {
@@ -171,6 +177,7 @@ function run(ctl: DuelController): void {
         el('span.pick-desc', {}, t(`card.${id}.d`))))),
         el('div.duel-side', {},
           el('div.duel-log', {}, s.log.slice(-5).map((m) => el('div', {}, tx(m)))),
+          mine && chosenId && NO_LANE.includes(chosenId) ? el('button.btn-primary', { onclick: () => play(s.lanes.findIndex((l) => l.node > 0)) }, t('duel.playCard', { card: cardName(chosenId) })) : null,
           s.winner ? el('div', {},
             el('h2', {}, t(`duel.win.${s.winner}`)),
             el('p', {}, t(`duel.reason.${s.reason}`)),

@@ -141,6 +141,8 @@ export class DiceTray {
   private ctx: CanvasRenderingContext2D;
   private dice: LiveDie[] = [];
   private running = false;
+  private destroyed = false;
+  private observer: ResizeObserver;
   private w = 0;
   private h = 0;
 
@@ -149,8 +151,17 @@ export class DiceTray {
     this.canvas.className = 'dice-canvas';
     container.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d')!;
-    new ResizeObserver(() => this.resize()).observe(container);
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(container);
     this.resize();
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.observer.disconnect();
+    this.dice = [];
+    this.canvas.width = 0;
+    this.canvas.height = 0;
   }
 
   private resize(): void {
@@ -208,6 +219,7 @@ export class DiceTray {
   }
 
   private loop(t: number): void {
+    if (this.destroyed) return;
     this.draw(t);
     if (this.dice.some((d) => t < d.start + d.dur)) {
       requestAnimationFrame((n) => this.loop(n));
