@@ -12,16 +12,31 @@ The game has three modes:
 
 ## Getting started
 
-Download a build from the Releases page, if one is available, or build it yourself:
+Download a build from the Releases page, if one is available. Or install it from source:
+
+**Linux**
 
 ```bash
-git clone <repository-url>
-cd zero-margin
-npm install
-npm start
+git clone https://github.com/Dravilias/Zero-Margin.git
+cd Zero-Margin
+./install.sh
 ```
 
-You need a recent version of Node.js. To try the game in a browser without the desktop app, run `npm run dev` and open <http://localhost:5199>. The language-model game master only works in the desktop app.
+This builds the game if needed, then adds it to your app menu and as a `zero-margin` command. It doesn't need root. Building needs a recent version of Node.js. Run `./install.sh --rebuild` to update after pulling changes, or `./install.sh --uninstall` to remove the game. Your saves and settings are kept.
+
+**Windows**
+
+Put a Windows package in the `release` folder, either downloaded or built with `npm ci` and `npm run dist:win`. Then run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+This adds the game to your Start menu without needing administrator rights. Add `-Uninstall` to remove it.
+
+**Without installing**
+
+Run `npm install`, then `npm start`. To try the game in a browser without the desktop app, run `npm run dev` and open <http://localhost:5199>. The language-model game master only works in the desktop app.
 
 New to the game? Start with the tutorial in the main menu, which takes about 5 minutes.
 
