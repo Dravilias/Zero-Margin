@@ -37,6 +37,28 @@ function append(node: Node, children: (Child | Child[])[]): void {
   }
 }
 
+/** A moving bar for anything that takes a while, so a wait never looks like a freeze. */
+export const loadingBar = (): HTMLElement => el('div.loading-bar', { role: 'progressbar', 'aria-label': 'Loading' }, el('span'));
+
+/** A whole page for a wait: an optional heading, what's happening, and the moving bar. */
+export const loadingPage = (text: string, title?: string): HTMLElement => el('div.center-page', {}, el('div.card.narrow', {},
+  title ? el('h2', {}, title) : null,
+  el('p', {}, text),
+  loadingBar(),
+));
+
+/** Runs once the browser has had the chance to show what's on the page. Hidden windows draw no frames, so a timer backs it up. */
+export function afterPaint(run: () => void): void {
+  let done = false;
+  const once = () => {
+    if (done) return;
+    done = true;
+    run();
+  };
+  requestAnimationFrame(() => requestAnimationFrame(once));
+  setTimeout(once, 200);
+}
+
 export function clear(node: Element): void {
   node.replaceChildren();
 }

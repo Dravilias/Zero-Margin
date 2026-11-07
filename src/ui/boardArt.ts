@@ -526,9 +526,12 @@ function paintLight(cx: Ctx, ext: Ext, bays: Bay[]): void {
   c.save();
   c.filter = 'blur(9px)';
   c.fillStyle = 'rgba(0,0,0,0.75)';
+  // One shape for all of it: a separate blurred fill per tile took seconds on a board this size.
+  c.beginPath();
   for (let y = -OUTER; y < m.h + OUTER; y++) {
-    for (let x = -OUTER; x < m.w + OUTER; x++) if (ext(x, y) === '#') c.fillRect(x * T + 8, y * T + 12, T, T);
+    for (let x = -OUTER; x < m.w + OUTER; x++) if (ext(x, y) === '#') c.rect(x * T + 8, y * T + 12, T, T);
   }
+  c.fill();
   c.restore();
 
   c.save();
@@ -905,12 +908,34 @@ function drawBuilding(cx: Ctx, ext: Ext, b: Building, bays: Bay[], noise: HTMLCa
 
 /* ---------- Cover: every piece has to read at a glance as a real object ---------- */
 
-function contact(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+/**
+ * Blurs one small shape on a scrap of canvas just big enough for it, then pastes that in.
+ * With ctx.filter set on the board itself, the browser works through the whole 8-megapixel canvas for every shape.
+ */
+function soft(c: CanvasRenderingContext2D, blur: number, x: number, y: number, w: number, h: number, paint: (t: CanvasRenderingContext2D) => void): void {
+  const m = c.getTransform();
+  const corners = [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map(([px, py]) => m.transformPoint({ x: px, y: py }));
+  const reach = blur * 3;
+  const left = Math.floor(Math.min(...corners.map((p) => p.x))) - reach;
+  const top = Math.floor(Math.min(...corners.map((p) => p.y))) - reach;
+  const scrap = document.createElement('canvas');
+  scrap.width = Math.ceil(Math.max(...corners.map((p) => p.x))) + reach - left;
+  scrap.height = Math.ceil(Math.max(...corners.map((p) => p.y))) + reach - top;
+  const t = scrap.getContext('2d')!;
+  t.setTransform(m.a, m.b, m.c, m.d, m.e - left, m.f - top);
+  t.filter = `blur(${blur}px)`;
+  paint(t);
   c.save();
-  c.filter = 'blur(4px)';
-  c.fillStyle = 'rgba(0,0,0,0.8)';
-  c.fillRect(x + 2, y + 5, w, h);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.drawImage(scrap, left, top);
   c.restore();
+}
+
+function contact(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
+  soft(c, 4, x + 2, y + 5, w, h, (t) => {
+    t.fillStyle = 'rgba(0,0,0,0.8)';
+    t.fillRect(x + 2, y + 5, w, h);
+  });
 }
 
 function barrierRun(cx: Ctx, x: number, y: number, len: number, horizontal: boolean): void {
@@ -963,11 +988,10 @@ function car(cx: Ctx, x: number, y: number, horizontal: boolean, seed: number): 
   c.save();
   orient(c);
   // Under-car glow and shadow
-  c.save();
-  c.filter = 'blur(7px)';
-  c.fillStyle = alpha(pick([NEON.pink, NEON.cyan, NEON.violet], hash(seed, 3)), 0.6);
-  c.fillRect(-len / 2 - 2, -wid / 2 - 3, len + 4, wid + 6);
-  c.restore();
+  soft(c, 7, -len / 2 - 2, -wid / 2 - 3, len + 4, wid + 6, (t) => {
+    t.fillStyle = alpha(pick([NEON.pink, NEON.cyan, NEON.violet], hash(seed, 3)), 0.6);
+    t.fillRect(-len / 2 - 2, -wid / 2 - 3, len + 4, wid + 6);
+  });
   c.fillStyle = 'rgba(0,0,0,0.85)';
   c.beginPath();
   c.roundRect(-len / 2, -wid / 2, len, wid, 13);
@@ -1092,13 +1116,12 @@ function drums(cx: Ctx, x: number, y: number, seed: number): void {
   const py = y * T;
   const tone = pick(['#2f7f8c', '#a2552f', '#59616e'], hash(seed, 1));
   const drum = (ax: number, ay: number) => {
-    c.save();
-    c.filter = 'blur(3px)';
-    c.fillStyle = 'rgba(0,0,0,0.8)';
-    c.beginPath();
-    c.ellipse(ax + 2, ay + 16, 13, 8, 0, 0, Math.PI * 2);
-    c.fill();
-    c.restore();
+    soft(c, 3, ax - 11, ay + 8, 26, 16, (t) => {
+      t.fillStyle = 'rgba(0,0,0,0.8)';
+      t.beginPath();
+      t.ellipse(ax + 2, ay + 16, 13, 8, 0, 0, Math.PI * 2);
+      t.fill();
+    });
     c.fillStyle = shade(tone, 0.55);
     c.fillRect(ax - 12, ay, 24, 14);
     c.beginPath();

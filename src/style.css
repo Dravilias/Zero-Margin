@@ -82,6 +82,16 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .card { background: var(--panel-solid); border: 1px solid var(--line); }
 .narrow { width: min(460px, 94vw); padding: 22px; display: flex; flex-direction: column; gap: 14px; }
 .wide { width: min(760px, 94vw); padding: 26px; display: flex; flex-direction: column; gap: 18px; }
+.loading-bar { position: relative; height: 3px; margin-top: 14px; overflow: hidden; background: var(--line); }
+/* Only a transform, so it keeps moving even while the page itself is busy. */
+.loading-bar > span { position: absolute; inset: 0; width: 40%; background: var(--accent); will-change: transform; animation: loading-slide 1.1s ease-in-out infinite; }
+@keyframes loading-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .loading-bar > span { width: 100%; opacity: 0.6; animation: none; } }
+.boot { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.boot-title { font-family: var(--display, sans-serif); font-size: 44px; font-weight: 800; letter-spacing: 0.06em; color: var(--ink); }
+.boot .loading-bar { width: 240px; }
+.board-loading { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; }
+.board-loading > div { min-width: 240px; padding: 14px 18px; background: var(--panel-solid); border: 1px solid var(--line); color: var(--ink-2); text-align: center; }
 .center-page { height: 100%; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--void); }
 .center-page.scroll { align-items: flex-start; overflow-y: auto; }
 .muted { color: var(--ink-3); }

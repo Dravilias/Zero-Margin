@@ -16,7 +16,7 @@ import { RelayClient, RelayError } from '../net/relayClient';
 import type { GameSession, HostMsg } from '../net/sessions';
 import { RULESET_OPTIONS, randomSeed } from '../net/table';
 import { sfx } from './audio';
-import { copyText, el, selectEl } from './dom';
+import { copyText, el, loadingBar, loadingPage, selectEl } from './dom';
 import type { GameView } from './game';
 import { getLang, t, tx } from './i18n';
 import { roleIcon } from './icons';
@@ -96,6 +96,7 @@ function resume(id: string): void {
     let relay: RelayClient | null = null;
     if (online) {
       relay = new RelayClient(settings.relayUrl);
+      ui.screen(loadingPage(t('join.connecting')));
       try {
         await relay.create(ui.myName());
       } catch (e) {
@@ -229,7 +230,7 @@ async function newCampaignScreen(): Promise<void> {
     if (mode === 'story') {
       if (source === 'note') arc = THE_NOTE;
       else if (source === 'llm') {
-        ui.screen(el('div.center-page', {}, el('div.card.narrow', {}, el('h2', {}, t('camp.writing')), el('p', {}, t('camp.writing.d')))));
+        ui.screen(loadingPage(t('camp.writing.d'), t('camp.writing')));
         const result = await writeArc(desktopLlm()!, {
           lang: getLang(), crewName, crew: crew.map((c) => ({ name: c.name, role: t(`role.${c.role}`) })), chronicle: [], wish: wish.trim() || undefined,
         }, `llm-${id}`);
@@ -243,6 +244,7 @@ async function newCampaignScreen(): Promise<void> {
     let relay: RelayClient | null = null;
     if (online) {
       relay = new RelayClient(settings.relayUrl);
+      ui.screen(loadingPage(t('join.connecting')));
       try {
         await relay.create(ui.myName());
       } catch (e) {
@@ -341,7 +343,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
 
   const transcriptEls = () => ctl.state.transcript.map((l) => el('p.camp-line', { class: `is-${l.kind}${l.ok === false ? ' is-bad' : ''}` }, l.from ? el('b', {}, `${l.from}: `) : null, tx(l.text)));
 
-  const busyLine = () => (ctl.state.busy ? el('p.muted.camp-busy', {}, t('camp.gmThinking')) : null);
+  const busyLine = () => (ctl.state.busy ? el('div.muted.camp-busy', {}, t('camp.gmThinking'), loadingBar()) : null);
 
   const noteEls = () => notes.map((n) => el('p.form-msg', {}, n));
 
@@ -743,7 +745,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
     );
   };
 
-  const waitingScreen = () => el('div.center-page', {}, el('div.card.narrow', {}, el('p', {}, t('camp.waitMission'))));
+  const waitingScreen = () => loadingPage(t('camp.waitMission'));
 
   /* ---------- Rendering ---------- */
 

@@ -2,6 +2,8 @@ import { FACTIONS } from '../engine/data';
 import type { GameState, RoleId, Unit } from '../engine/types';
 import { sfx } from './audio';
 import { ART_SCALE, OUTER, T, renderBoardArt, type BoardArt } from './boardArt';
+import { afterPaint, el, loadingBar } from './dom';
+import { t } from './i18n';
 import { ROLE_PATHS, isStroked } from './icons';
 import { settings, speedFactor } from './settings';
 
@@ -196,11 +198,25 @@ export class Board {
     if (s.map.id !== this.mapId) {
       this.mapId = s.map.id;
       this.viewKey = '';
-      this.art = renderBoardArt(s);
+      this.paintArt();
       if (!this.userCam) this.fit();
     }
     // A token with no running animation sits exactly on its square.
     for (const key of [...this.tokenPos.keys()]) if (!this.state.units.some((u) => u.id === key)) this.tokenPos.delete(key);
+  }
+
+  /** The art can take a while on a slow PC, so the loading panel has to be on screen before it starts. */
+  private paintArt(): void {
+    this.art = null;
+    const panel = el('div.board-loading', {}, el('div', {}, t('game.loading'), loadingBar()));
+    this.canvas.parentElement?.appendChild(panel);
+    afterPaint(() => {
+      if (this.destroyed) return;
+      if (this.state) this.art = renderBoardArt(this.state);
+      // The slow part happens when the art is first drawn, so the panel stays until the frame after that.
+      requestAnimationFrame(() => requestAnimationFrame(() => panel.remove()));
+      setTimeout(() => panel.remove(), 1000);
+    });
   }
 
   /** Space the interface covers on each side; the board fits inside it and the city runs on behind. */

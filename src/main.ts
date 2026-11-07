@@ -8,8 +8,10 @@ import '@fontsource/barlow-condensed/700';
 import '@fontsource/ibm-plex-mono/500.css';
 import '@fontsource/ibm-plex-mono/700.css';
 import './style.css';
+import { afterPaint } from './ui/dom';
 import { initScreens } from './ui/screens';
 import { loadSettings } from './ui/settings';
 
 loadSettings();
-initScreens(document.getElementById('app')!);
+// Lets the boot screen in index.html show first, because building the menu's skyline takes a moment.
+afterPaint(() => initScreens(document.getElementById('app')!));

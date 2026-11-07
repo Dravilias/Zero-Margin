@@ -1,7 +1,7 @@
 {
   "name": "zero-margin",
   "productName": "Zero Margin",
-  "version": "0.6.9",
+  "version": "0.6.10",
   "description": "An original cyberpunk tabletop game: squad skirmish and story campaigns, against the computer or with friends.",
   "author": "Zero Margin",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -18,8 +18,8 @@
     "start": "npm run build && electron .",
     "icon": "node scripts/make-icon.mjs",
     "dist:linux": "npm run build && electron-builder --linux AppImage",
-    "dist:win": "npm run build && electron-builder --win portable",
-    "dist": "npm run build && electron-builder --linux AppImage --win portable",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist": "npm run build && electron-builder --linux AppImage --win nsis",
     "relay": "node relay/server.mjs"
   },
   "build": {
@@ -44,9 +44,19 @@
       "syncDesktopName": true
     },
     "win": {
-      "target": "portable",
+      "target": "nsis",
       "icon": "build/icon.png",
       "signExecutable": false
+    },
+    "nsis": {
+      "artifactName": "ZeroMargin-${version}-win-x64-setup.${ext}",
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Zero Margin",
+      "deleteAppDataOnUninstall": false
     },
     "npmRebuild": false
   },

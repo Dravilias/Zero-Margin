@@ -5,7 +5,7 @@ import { RelayClient } from '../net/relayClient';
 import type { HostMsg } from '../net/sessions';
 import { RULESET_OPTIONS, randomSeed } from '../net/table';
 import { sfx } from './audio';
-import { copyText, el } from './dom';
+import { copyText, el, loadingPage } from './dom';
 import { t, tx } from './i18n';
 import { settings } from './settings';
 
@@ -37,6 +37,7 @@ export function duelSetup(): void {
       return;
     }
     const relay = new RelayClient(settings.relayUrl);
+    ui.screen(loadingPage(t('join.connecting')));
     try {
       await relay.create(ui.myName());
       run(new DuelHost(relay, seed, ruleset, side));

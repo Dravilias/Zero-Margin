@@ -16,7 +16,7 @@ import {
 import { sfx } from './audio';
 import { playMusic, setMusicVolume } from './music';
 import { campaignHome, initCampaignScreens, joinCampaign } from './campaign';
-import { clear, copyText, el, selectEl } from './dom';
+import { clear, copyText, el, loadingPage, selectEl } from './dom';
 import { duelSetup, initDuelScreens, joinDuel } from './duel';
 import { GameView } from './game';
 import { getLang, t, type Lang } from './i18n';
@@ -312,7 +312,7 @@ function updateDialog(version: string): void {
 }
 
 async function runGameUpdate(): Promise<void> {
-  screen(el('div.center-page', {}, el('div.card.narrow', {}, el('h2', {}, t('update.running')), el('p', {}, t('update.wait')))));
+  screen(loadingPage(t('update.wait'), t('update.running')));
   const res = await window.zmDesktop!.updateInstall();
   // On success this copy is already closing and the new one is starting.
   if (res.ok) return;
@@ -405,6 +405,7 @@ async function continueSave(): Promise<void> {
     playSession(new LocalSession(save.state, humans));
     return;
   }
+  screen(loadingPage(t('join.connecting')));
   try {
     playSession(await resumeHosted(save, settings.relayUrl, myName()));
   } catch (e) {
@@ -422,7 +423,7 @@ function alertScreen(text: string): void {
 /* ---------- Online entry points ---------- */
 
 async function hostScreen(): Promise<void> {
-  screen(el('div.center-page', {}, el('div.card.narrow', {}, el('p', {}, t('join.connecting')))));
+  screen(loadingPage(t('join.connecting')));
   const relay = new RelayClient(settings.relayUrl);
   try {
     await relay.create(myName());
