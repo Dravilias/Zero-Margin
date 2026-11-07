@@ -8,7 +8,7 @@ The game has three modes:
 - **Story campaign:** run a crew from job to job through a story with choices and endings, or keep going on an endless job board.
 - **Card duel:** a hacker tries to crack a corporation's network while the corporation hunts them down.
 
-> **Status: early (v0.6.7).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
+> **Status: early (v0.6.8).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
 
 ## Getting started
 
@@ -22,7 +22,7 @@ cd Zero-Margin
 ./install.sh
 ```
 
-This builds the game if needed, then adds it to your app menu and as a `zero-margin` command. It doesn't need root. Building needs a recent version of Node.js. Run `./install.sh --rebuild` to update after pulling changes, or `./install.sh --uninstall` to remove the game. Your saves and settings are kept.
+This builds the game if needed, then adds it to your app menu and as a `zero-margin` command. When a newer version is on GitHub, the main menu offers an update button that runs `git pull` and this script for you. It doesn't need root. Building needs a recent version of Node.js. Run `./install.sh --rebuild` to update after pulling changes, or `./install.sh --uninstall` to remove the game. Your saves and settings are kept.
 
 **Windows**
 

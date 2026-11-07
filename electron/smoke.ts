@@ -10,6 +10,8 @@ import path from 'node:path';
  *   ZM_SMOKE_ONLINE=1  host a real online table and play to round 3 with whoever joins
  *   ZM_SMOKE_CAMPAIGN=1  play a campaign start to finish of one job, against a pretend model server
  *   ZM_SMOKE_LEAK=1      enter and leave a battle repeatedly and report memory, to catch leaks
+ *   ZM_SMOKE_UPDATE=x.y.z   pretend the repo has this version
+ *   ZM_SMOKE_UPDATE_RUN=1   click through the menu's update button
  *   ZM_SMOKE_SHOTS=dir   save screenshots of the campaign screens there
  * Every run uses a throwaway profile, so it can't touch real settings or saves.
  */
@@ -143,6 +145,28 @@ const LEAK_CHECK = `
   })()
 `;
 
+const UPDATE_CHECK = `
+  (async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 50 && !document.querySelector('.menu-update'); i++) await wait(100);
+    const entry = document.querySelector('.menu-update');
+    if (!entry) return { passed: false, stage: 'no update entry', page: document.body.innerText.slice(0, 300) };
+    console.log('ZMLOG ENTRY ' + entry.textContent);
+    console.log('ZMLOG SHOT update-menu');
+    await wait(500);
+    entry.click();
+    await wait(300);
+    console.log('ZMLOG SHOT update-dialog');
+    await wait(500);
+    document.querySelector('.modal .btn-primary').click();
+    await wait(200);
+    console.log('ZMLOG RUNNING ' + document.querySelector('.card h2')?.textContent);
+    // A working update closes this copy, so there's nothing to return.
+    for (let i = 0; i < 300 && !document.querySelector('.card .btn-primary'); i++) await wait(100);
+    return { passed: false, stage: 'update failed', page: document.body.innerText.slice(0, 300) };
+  })()
+`;
+
 const CAMPAIGN_CHECK = `
   (async () => {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -154,6 +178,9 @@ const CAMPAIGN_CHECK = `
     try {
     await document.fonts.ready;
     await wait(400);
+    await until(() => document.querySelector('.menu-update'), 1500);
+    const updateEntry = document.querySelector('.menu-update')?.textContent ?? null;
+    await shot('menu');
     await window.zmDesktop.llmConfigure([{ endpoint: 'http://localhost:9/v1', key: '', writer: 'smoke-writer', runner: 'smoke-runner' }]);
     button(/Story campaign|Kampania fabularna/).click();
     await wait(200);
@@ -214,7 +241,7 @@ const CAMPAIGN_CHECK = `
     await shot('settings');
     const keyResult = await window.zmDesktop.llmConfigure([{ endpoint: 'http://localhost:9/v1', key: 'smoke-test-key', writer: 'smoke-writer', runner: 'smoke-runner' }]);
     return {
-      passed: true, title, freeLines: lines, crewInBattle, keyResult, keyReachesPage: JSON.stringify(await window.zmDesktop.llmStatus()).includes('smoke-test-key'),
+      passed: true, updateEntry, title, freeLines: lines, crewInBattle, keyResult, keyReachesPage: JSON.stringify(await window.zmDesktop.llmStatus()).includes('smoke-test-key'),
       writerModel: [...document.querySelectorAll('input')].map((i) => i.value).filter((v) => v.startsWith('smoke-')),
     };
     } catch (e) {
@@ -254,7 +281,7 @@ export function runSmoke(win: BrowserWindow): void {
   });
   win.webContents.once('did-finish-load', async () => {
     report(`started on ${process.platform} ${process.arch}, electron ${process.versions.electron}, app at ${app.getAppPath()}`);
-    const check = process.env.ZM_SMOKE_LEAK === '1' ? LEAK_CHECK : process.env.ZM_SMOKE_CAMPAIGN === '1' ? CAMPAIGN_CHECK : process.env.ZM_SMOKE_ONLINE === '1' ? ONLINE_CHECK : LOCAL_CHECK;
+    const check = process.env.ZM_SMOKE_UPDATE_RUN === '1' ? UPDATE_CHECK : process.env.ZM_SMOKE_LEAK === '1' ? LEAK_CHECK : process.env.ZM_SMOKE_CAMPAIGN === '1' ? CAMPAIGN_CHECK : process.env.ZM_SMOKE_ONLINE === '1' ? ONLINE_CHECK : LOCAL_CHECK;
     let result: { passed?: boolean } = {};
     try {
       result = await win.webContents.executeJavaScript(check);

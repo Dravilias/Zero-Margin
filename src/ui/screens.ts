@@ -285,6 +285,40 @@ function runMenuRain(canvas: HTMLCanvasElement): void {
   requestAnimationFrame(step);
 }
 
+declare const __APP_VERSION__: string;
+
+/** Fills in the menu's update entry, if the repo has something newer. It never holds the menu up. */
+async function showUpdate(slot: HTMLElement): Promise<void> {
+  const d = window.zmDesktop;
+  if (!d || !settings.checkUpdates) return;
+  const u = await d.updateCheck();
+  if (!u.available || !slot.isConnected) return;
+  const label = t('update.available', { version: u.latest ?? '' });
+  slot.replaceChildren(u.canInstall
+    ? el('button.menu-item.menu-update', { onclick: () => updateDialog(u.latest ?? '') }, el('span.menu-title', {}, label), el('span.menu-sub', {}, t('update.install')))
+    : el('button.menu-item.menu-update', { onclick: () => window.open(u.page) }, el('span.menu-title', {}, label), el('span.menu-sub', {}, t('update.page'))));
+}
+
+function updateDialog(version: string): void {
+  const back = el('div.modal-back', {}, el('div.modal.card', {},
+    el('h2', {}, t('update.title', { version })),
+    el('p', {}, t('update.explain')),
+    el('div.modal-actions', {},
+      el('button.btn-primary', { onclick: () => void runGameUpdate() }, t('update.go')),
+      el('button.btn-quiet', { onclick: () => back.remove() }, t('common.cancel')),
+    ),
+  ));
+  root.appendChild(back);
+}
+
+async function runGameUpdate(): Promise<void> {
+  screen(el('div.center-page', {}, el('div.card.narrow', {}, el('h2', {}, t('update.running')), el('p', {}, t('update.wait')))));
+  const res = await window.zmDesktop!.updateInstall();
+  // On success this copy is already closing and the new one is starting.
+  if (res.ok) return;
+  alertScreen(t('update.failed', { log: res.log }));
+}
+
 export function menuScreen(): void {
   playMusic('menu');
   const save = loadSave();
@@ -293,10 +327,12 @@ export function menuScreen(): void {
   const item = (title: string, sub: string | null, onclick: (() => void) | null, primary = false) =>
     el('button.menu-item', { class: primary ? 'primary' : '', disabled: !onclick, onclick: onclick ? () => { sfx.click(); onclick(); } : undefined },
       el('span.menu-title', {}, title), sub ? el('span.menu-sub', {}, sub) : null);
+  const updateSlot = el('div.menu-update-slot');
+  void showUpdate(updateSlot);
   const menu = el('div.menu', {},
     art,
     rain,
-    el('div.menu-version', {}, 'v0.6.7'),
+    el('div.menu-version', {}, `v${__APP_VERSION__}`),
     el('div.menu-col', {},
       el('div', {}, el('h1.logo', {}, 'ZERO MARGIN'), el('p.tagline', {}, t('app.tagline'))),
       el('nav.menu-list', {},
@@ -305,6 +341,7 @@ export function menuScreen(): void {
         item(t('menu.skirmish'), null, () => tableScreen(new LocalTable(newTable(myName(), false))), settings.tutorialDone && !save),
         item(t('menu.host'), null, () => hostScreen()),
         item(t('menu.join'), null, () => joinScreen()),
+        updateSlot,
         el('div.menu-gap'),
         item(t('menu.campaign'), t('menu.campaign.sub'), () => campaignHome()),
         item(t('menu.duel'), null, () => duelSetup()),
@@ -751,6 +788,7 @@ function settingsScreen(): void {
       onchange: () => saveSettings(),
     })),
     field(t('settings.speed'), selectEl(settings.speed, speeds, (v) => { settings.speed = v; saveSettings(); })),
+    field(t('update.setting'), selectEl(settings.checkUpdates ? 'on' : 'off', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], (v) => { settings.checkUpdates = v === 'on'; saveSettings(); })),
     field(t('settings.rain'), selectEl(settings.rain ? 'on' : 'off', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], (v) => { settings.rain = v === 'on'; saveSettings(); })),
     field(t('settings.relay'), relay),
     el('p.muted.small', {}, t('settings.relayHint')),

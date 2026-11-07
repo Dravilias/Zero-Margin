@@ -357,6 +357,16 @@ export const campaignPl: Record<string, string> = {
 };
 
 export const depthEn: Record<string, string> = {
+  'update.available': 'Update to v{version}',
+  'update.install': 'New version',
+  'update.page': 'Get it on GitHub',
+  'update.title': 'Update to v{version}?',
+  'update.explain': 'This gets the new code from GitHub and runs the install script. It can take a few minutes, and the game restarts when it’s done. Your saves stay.',
+  'update.go': 'Update',
+  'update.running': 'Updating',
+  'update.wait': 'Getting and building the new version. This can take a few minutes, so leave the game open.',
+  'update.failed': 'The update didn’t finish, and your current version still works. Details are in {log}',
+  'update.setting': 'Check for updates',
   'settings.music': 'Music',
   "advance.hp.d": "More health, so this person survives more hits.",
   "advance.quick.d": "Moves further (+1 square per 2), acts earlier, better in melee, harder to hit.",
@@ -530,6 +540,16 @@ export const depthEn: Record<string, string> = {
 };
 
 export const depthPl: Record<string, string> = {
+  'update.available': 'Aktualizuj do v{version}',
+  'update.install': 'Nowa wersja',
+  'update.page': 'Pobierz z GitHuba',
+  'update.title': 'Zaktualizować do v{version}?',
+  'update.explain': 'Gra pobierze nowy kod z GitHuba i uruchomi skrypt instalacyjny. Może to potrwać kilka minut, a na koniec gra uruchomi się ponownie. Zapisy zostają.',
+  'update.go': 'Aktualizuj',
+  'update.running': 'Aktualizacja',
+  'update.wait': 'Pobieram i buduję nową wersję. Może to potrwać kilka minut, więc nie zamykaj gry.',
+  'update.failed': 'Aktualizacja się nie udała, ale obecna wersja nadal działa. Szczegóły są w {log}',
+  'update.setting': 'Sprawdzaj aktualizacje',
   'settings.music': 'Muzyka',
   "advance.hp.d": "Więcej zdrowia, więc ta osoba przeżyje więcej trafień.",
   "advance.quick.d": "Dalszy ruch (+1 pole na 2), wcześniejsza inicjatywa, lepsza walka wręcz, trudniej trafić.",

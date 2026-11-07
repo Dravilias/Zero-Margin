@@ -1,9 +1,11 @@
 import { app, BrowserWindow, Menu, ipcMain, safeStorage, session, shell } from 'electron';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { callChat, callWithFallbacks, normalizeEndpoint, type LlmServer, type LlmTierCall } from './llm';
 import { fakeLlmReply, runSmoke } from './smoke';
+import { REPO_PAGE, cleanEnv, isNewer, latestVersion, runUpdate, usableSource } from './update';
 
 const smokeTest = process.env.ZM_SMOKE_TEST === '1';
 const fakeLlm = smokeTest && process.env.ZM_SMOKE_CAMPAIGN === '1';
@@ -134,12 +136,48 @@ app.on('second-instance', () => {
   win.focus();
 });
 
+/* ---------- Updates ---------- */
+
+const installDir = () => path.join(process.env.XDG_DATA_HOME || path.join(app.getPath('home'), '.local', 'share'), 'zero-margin');
+
+/** install.sh records where the clone is. Only an installed copy updates itself, never a developer's own run. */
+function updateSource(): string | null {
+  if (!app.isPackaged || process.platform !== 'linux') return null;
+  try {
+    const dir = fs.readFileSync(path.join(installDir(), 'source-dir'), 'utf8').trim();
+    return usableSource(dir) ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+function registerUpdates(): void {
+  ipcMain.handle('zm-update-check', async () => {
+    const current = app.getVersion();
+    // A test run has no business on the network, and can ask to pretend there's an update.
+    const latest = smokeTest ? (process.env.ZM_SMOKE_UPDATE ?? null) : await latestVersion();
+    return { current, latest, available: !!latest && isNewer(latest, current), canInstall: !!updateSource(), page: REPO_PAGE };
+  });
+  ipcMain.handle('zm-update-install', async () => {
+    const dir = updateSource();
+    if (!dir) return { ok: false, log: '' };
+    const log = path.join(app.getPath('userData'), 'update.log');
+    if (!await runUpdate(dir, log, process.env)) return { ok: false, log };
+    // Wait a moment so this copy has let go of the single-copy lock when the new one starts.
+    const installed = path.join(installDir(), 'ZeroMargin.AppImage');
+    spawn('bash', ['-c', 'sleep 1; exec "$0"', installed], { detached: true, stdio: 'ignore', env: cleanEnv(process.env) }).unref();
+    app.quit();
+    return { ok: true, log };
+  });
+}
+
 app.whenReady().then(() => {
   if (!firstCopy) return;
   // The game needs no camera, microphone or location; copying the join code is the only permission it uses.
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(perm === 'clipboard-sanitized-write'));
   ipcMain.on('zm-quit', () => app.quit());
   registerLlm();
+  registerUpdates();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

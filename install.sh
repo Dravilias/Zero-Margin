@@ -21,7 +21,7 @@ refresh_menu() {
 }
 
 uninstall() {
-  rm -f "$APP_FILE" "$BIN_LINK" "$DESKTOP_FILE" "$ICON_FILE"
+  rm -f "$APP_FILE" "$BIN_LINK" "$DESKTOP_FILE" "$ICON_FILE" "$APP_DIR/source-dir"
   rmdir "$APP_DIR" 2>/dev/null || true
   refresh_menu
   echo "Zero Margin is uninstalled. Your saves and settings were kept."
@@ -30,7 +30,10 @@ uninstall() {
 find_package() {
   # A fresh copy has no release folder yet, which just means nothing has been built.
   [ -d release ] || return 0
-  find release -maxdepth 1 -name 'ZeroMargin-*-linux-*.AppImage' | sort -V | tail -n 1
+  # Only a package of this exact version counts, so after a git pull this builds the update instead of reinstalling an old one.
+  local version
+  version="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' package.json)"
+  find release -maxdepth 1 -name "ZeroMargin-$version-linux-*.AppImage"
 }
 
 build() {
@@ -66,6 +69,8 @@ install -m 755 "$PACKAGE" "$APP_FILE.new"
 mv -f "$APP_FILE.new" "$APP_FILE"
 install -m 644 build/icon.png "$ICON_FILE"
 ln -sf "$APP_FILE" "$BIN_LINK"
+# The game's update button needs to know which clone to update.
+pwd > "$APP_DIR/source-dir"
 
 cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
