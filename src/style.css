@@ -205,7 +205,8 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .stepper b { font: 500 13px var(--mono); color: var(--ink); min-width: 10px; text-align: center; }
 .su-chrome { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip-toggle { font-size: 14px; padding: 2px 7px; border: 1px solid var(--line); color: var(--ink-2); }
-.chip-toggle:hover { color: var(--ink); border-color: var(--line-2); }
+.chip-toggle:hover:not(:disabled) { color: var(--ink); border-color: var(--line-2); }
+.chip-toggle:disabled { opacity: 0.4; }
 .chip-toggle.on { border-color: var(--accent); color: var(--accent); }
 .recruit { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px; }
 .recruit-btn { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); padding: 5px 7px; }

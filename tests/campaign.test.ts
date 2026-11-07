@@ -194,6 +194,18 @@ describe('between jobs', () => {
     expect(s.cash).toBe(600);
   });
 
+  it('fits one person with up to four pieces of chrome and takes them all into battle', () => {
+    let s = newCamp({ mode: 'endless', arc: null });
+    s = { ...s, cash: 5000 };
+    const pieces = ['dermal', 'stim', 'dashlegs', 'smartlink'] as const;
+    for (const chrome of pieces) s = act(s, { a: 'chrome', id: 1, chrome });
+    expect(s.crew.find((m) => m.id === 1)!.chrome).toEqual(pieces);
+    expect(refused(s, { a: 'chrome', id: 1, chrome: 'claws' })).toBe('chromeFull');
+    s = act(s, { a: 'takeGig', gig: s.offers[1].id, squad: [1, 3] });
+    const unit = buildMission(s).units.find((u) => u.id === 's0u0')!;
+    expect(unit.chrome).toEqual(pieces);
+  });
+
   it('heals by clinic, by sitting out, or by resting', () => {
     let s = newCamp({ mode: 'endless', arc: null });
     s = act(s, { a: 'takeGig', gig: s.offers[0].id, squad: [1, 2] });

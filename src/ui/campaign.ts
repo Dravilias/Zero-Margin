@@ -492,9 +492,11 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       m.ranged ? el('p.muted.small', {}, `${t(`weapon.${m.ranged}`)}: ${WEAPONS[m.ranged].dice}d6${WEAPONS[m.ranged].bonus ? `+${WEAPONS[m.ranged].bonus}` : ''}`) : null,
       el('h3', {}, t('camp.chrome', { n: m.chrome.length, max: MAX_CHROME })),
       el('div.su-chrome', {}, CHROME_IDS.map((c: ChromeId) => el('button.chip-toggle', {
-        class: m.chrome.includes(c) ? 'on' : '', title: t(`chrome.${c}.d`), disabled: !can || !hub || (!m.chrome.includes(c) && ctl.state.cash < chromeCost(c)),
+        class: m.chrome.includes(c) ? 'on' : '', title: t(`chrome.${c}.d`), disabled: !can || !hub || (!m.chrome.includes(c) && (m.chrome.length >= MAX_CHROME || ctl.state.cash < chromeCost(c))),
         onclick: () => ctl.dispatch({ a: 'chrome', id: m.id, chrome: c }),
       }, `${t(`chrome.${c}`)}${m.chrome.includes(c) ? '' : ` ${CHROME_COST[c] * 50}`}`))),
+      can && hub && m.chrome.length >= MAX_CHROME ? el('p.muted.small', {}, t('camp.chrome.full')) : null,
+      can && hub && m.chrome.length < MAX_CHROME && CHROME_IDS.some((c: ChromeId) => !m.chrome.includes(c) && ctl.state.cash < chromeCost(c)) ? el('p.muted.small', {}, t('camp.chrome.cash')) : null,
       el('h3', {}, t('squad.grenades')),
       el('div.steppers', {}, kinds.filter((k) => k !== 'emp' || ctl.state.ruleset !== 'quick').map((k) => el('span.stepper', {},
         el('span', {}, `${t(`grenade.${k}`)} (${grenadeCost(k)})`),
@@ -745,7 +747,8 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
 
   /* ---------- Rendering ---------- */
 
-  const scrollers = ['.camp-col:nth-child(1)', '.camp-col:nth-child(2)', '.camp-col:nth-child(3)', '.camp-scene'];
+  // In a narrow window the columns stack and scroll together, so the whole block has to keep its place too.
+  const scrollers = ['.camp-cols', '.camp-col:nth-child(1)', '.camp-col:nth-child(2)', '.camp-col:nth-child(3)', '.camp-scene'];
 
   function render(): void {
     if (inBattle) return;
