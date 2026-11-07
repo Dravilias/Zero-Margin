@@ -8,7 +8,7 @@ The game has three modes:
 - **Story campaign:** run a crew from job to job through a story with choices and endings, or keep going on an endless job board.
 - **Card duel:** a hacker tries to crack a corporation's network while the corporation hunts them down.
 
-> **Status: early (v0.6.5).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
+> **Status: early (v0.6.7).** All three modes are playable, but balance is still rough and some parts haven't had much real-world testing. See [Known limitations](#known-limitations).
 
 ## Getting started
 

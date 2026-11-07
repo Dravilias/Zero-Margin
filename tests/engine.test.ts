@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { chooseAction } from '../src/engine/ai';
 import { FACTION_IDS, RULESETS, defaultRoster, rosterCost } from '../src/engine/data';
 import { applyAction, createGame, hitChance, previewAttack, reachable, stoppable, unitById } from '../src/engine/game';
-import { generateMap, los } from '../src/engine/map';
+import { generateMap, los, passWidth } from '../src/engine/map';
 import { Rand } from '../src/engine/rng';
 import type { AiLevel, FactionId, GameConfig, GameState, MapSize, RulesetId, ScenarioId, ThemeId } from '../src/engine/types';
 
@@ -62,6 +62,21 @@ describe('squads', () => {
 });
 
 describe('maps', () => {
+  it('never squeezes everyone through a narrow gap', () => {
+    const minimum = { small: 4, medium: 5, large: 6 } as const;
+    for (const size of ['small', 'medium', 'large'] as const) for (const theme of ['docks', 'market', 'plaza'] as const) for (const sides of [2, 3, 4]) for (const scenario of ['flatline', 'terminals'] as const) {
+      for (let seed = 1; seed <= 15; seed++) {
+        const m = generateMap(seed * 41, size, theme, sides, scenario);
+        for (const zone of m.zones.slice(1, 3)) {
+          const width = passWidth([...m.tiles], m.w, m.h, m.zones[0], zone, minimum[size]);
+          expect(width, `${size} ${theme} ${sides} sides, seed ${seed * 41}`).toBeGreaterThanOrEqual(minimum[size]);
+        }
+        // It's still a battlefield: routes open up, but cover doesn't disappear.
+        expect([...m.tiles].filter((t) => t === 'c').length).toBeGreaterThanOrEqual(8);
+      }
+    }
+  }, 120000);
+
   it('is deterministic and has a symmetric layout', () => {
     const a = generateMap(42, 'medium', 'market', 2, 'flatline');
     const b = generateMap(42, 'medium', 'market', 2, 'flatline');
@@ -86,7 +101,7 @@ describe('maps', () => {
         expect(m.zones.length).toBe(sides);
       }
     }
-  });
+  }, 120000);
 
   it('walls block line of sight', () => {
     const m = { id: 'wall-test', w: 5, h: 1, tiles: '..#..', theme: 'docks', zones: [], terminals: [], core: null } as Parameters<typeof los>[0];

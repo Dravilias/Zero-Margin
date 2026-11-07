@@ -1,9 +1,11 @@
 import { setLang, type Lang } from './i18n';
+import { setMusicVolume } from './music';
 
 export interface Settings {
   lang: Lang;
   name: string;
   volume: number;
+  music: number;
   speed: 'slow' | 'normal' | 'fast';
   rain: boolean;
   relayUrl: string;
@@ -20,7 +22,7 @@ function systemLang(): Lang {
 }
 
 const defaults = (): Settings => ({
-  lang: systemLang(), name: '', volume: 0.6, speed: 'normal', rain: true, relayUrl: DEFAULT_RELAY, tutorialDone: false,
+  lang: systemLang(), name: '', volume: 0.6, music: 0.5, speed: 'normal', rain: true, relayUrl: DEFAULT_RELAY, tutorialDone: false,
   gmEnabled: true,
 });
 
@@ -32,6 +34,7 @@ export function loadSettings(): void {
     if (raw) Object.assign(settings, JSON.parse(raw));
   } catch { /* fall back to defaults */ }
   setLang(settings.lang);
+  setMusicVolume(settings.music);
 }
 
 export function saveSettings(): void {

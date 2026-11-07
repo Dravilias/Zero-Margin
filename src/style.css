@@ -522,3 +522,8 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .duel-log { flex: 1; font-size: 14px; color: var(--ink-2); line-height: 1.2; user-select: text; }
 .gm-server { display: flex; flex-direction: column; gap: 7px; border: 1px solid var(--line); padding: 9px 11px; }
 .save-warning { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 60; background: var(--panel-solid); border: 1px solid var(--bad); color: var(--bad); padding: 5px 14px; font-size: 15px; pointer-events: none; }
+.camp-advances { display: flex; flex-direction: column; gap: 3px; }
+.camp-advance-opt { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: baseline; text-align: left; border: 1px solid var(--line); padding: 3px 7px; }
+.camp-advance-opt:hover { border-color: var(--accent); background: var(--accent-dim); }
+.camp-advance-opt b { font-weight: 500; font-size: 14px; color: var(--ink); white-space: nowrap; }
+.camp-advance-opt span { font-size: 13.5px; line-height: 1.15; color: var(--ink-2); }

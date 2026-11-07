@@ -188,7 +188,8 @@ const MAX_BONUS = 3;
 export function advancesFor(role: RoleId): AdvancePick[] {
   const r = ROLES[role];
   const stats = STAT_KEYS.filter((k) => k !== 'wire' || r.skills.hack > 0);
-  const skills = SKILL_KEYS.filter((k) => r.skills[k] > 0);
+  // Tech only unlocks repairs and drones; a higher score wouldn't do anything, so it isn't offered.
+  const skills = SKILL_KEYS.filter((k) => r.skills[k] > 0 && k !== 'tech');
   return ['hp', ...stats, ...skills];
 }
 

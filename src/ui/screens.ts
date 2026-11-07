@@ -14,6 +14,7 @@ import {
   type Seat, type SeatKind,
 } from '../net/table';
 import { sfx } from './audio';
+import { playMusic, setMusicVolume } from './music';
 import { campaignHome, initCampaignScreens, joinCampaign } from './campaign';
 import { clear, copyText, el, selectEl } from './dom';
 import { duelSetup, initDuelScreens, joinDuel } from './duel';
@@ -285,6 +286,7 @@ function runMenuRain(canvas: HTMLCanvasElement): void {
 }
 
 export function menuScreen(): void {
+  playMusic('menu');
   const save = loadSave();
   const art = el('canvas.menu-art') as HTMLCanvasElement;
   const rain = el('canvas.menu-art') as HTMLCanvasElement;
@@ -294,7 +296,7 @@ export function menuScreen(): void {
   const menu = el('div.menu', {},
     art,
     rain,
-    el('div.menu-version', {}, 'v0.6.5'),
+    el('div.menu-version', {}, 'v0.6.7'),
     el('div.menu-col', {},
       el('div', {}, el('h1.logo', {}, 'ZERO MARGIN'), el('p.tagline', {}, t('app.tagline'))),
       el('nav.menu-list', {},
@@ -742,6 +744,11 @@ function settingsScreen(): void {
     field(t('settings.volume'), el('input', {
       type: 'range', min: 0, max: 1, step: 0.05, value: String(settings.volume),
       onchange: (e: Event) => { settings.volume = Number((e.target as HTMLInputElement).value); saveSettings(); sfx.turn(); },
+    })),
+    field(t('settings.music'), el('input', {
+      type: 'range', min: 0, max: 1, step: 0.05, value: String(settings.music),
+      oninput: (e: Event) => { settings.music = Number((e.target as HTMLInputElement).value); setMusicVolume(settings.music); },
+      onchange: () => saveSettings(),
     })),
     field(t('settings.speed'), selectEl(settings.speed, speeds, (v) => { settings.speed = v; saveSettings(); })),
     field(t('settings.rain'), selectEl(settings.rain ? 'on' : 'off', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], (v) => { settings.rain = v === 'on'; saveSettings(); })),

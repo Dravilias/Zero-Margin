@@ -10,7 +10,7 @@ import type { Action, AiLevel, GameState, GrenadeKind, Unit } from './types';
 interface Tuning { exposure: number; noise: number; focus: number; tactics: boolean }
 
 const TUNING: Record<AiLevel, Tuning> = {
-  easy: { exposure: 0.05, noise: 4.2, focus: 0, tactics: false },
+  easy: { exposure: 0.05, noise: 5.5, focus: 0, tactics: false },
   normal: { exposure: 0.6, noise: 0.8, focus: 0.5, tactics: true },
   hard: { exposure: 1, noise: 0.1, focus: 1, tactics: true },
 };

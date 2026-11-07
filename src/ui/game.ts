@@ -7,6 +7,7 @@ import { canStand, dist, inRect, tileAt } from '../engine/map';
 import type { Action, AttackPreview, GameEvent, GameState, GrenadeKind, HitLoc, ProgramId, RoleId, Unit } from '../engine/types';
 import { GuestSession, type GameSession, type GameUpdate } from '../net/sessions';
 import { sfx } from './audio';
+import { playMusic } from './music';
 import { Board, NO_HIGHLIGHTS, type Highlights } from './board';
 import { DiceTray, type DieRequest } from './dice';
 import { clear, copyText, el } from './dom';
@@ -65,6 +66,7 @@ export class GameView {
 
   constructor(private root: HTMLElement, private session: GameSession, private nav: GameNav, private coach?: Coach) {
     this.display = structuredClone(session.state);
+    playMusic('battle');
     this.build();
     session.onUpdate = (u) => this.enqueue(u);
     session.onChat = (from, text) => this.logLine(`${from}: ${text}`, 'chat');
@@ -101,6 +103,7 @@ export class GameView {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    playMusic('menu');
     window.removeEventListener('keydown', this.keyHandler);
     this.layoutObserver?.disconnect();
     this.board.destroy();
@@ -316,6 +319,7 @@ export class GameView {
         this.refreshPanels();
         break;
       case 'activate': {
+        this.resetAttackChoices();
         s.activeUnit = e.unit;
         this.patchUnit(e.unit, { activated: true, ap: e.ap, overwatch: false, braced: false });
         this.selected = e.unit;
@@ -324,6 +328,7 @@ export class GameView {
         break;
       }
       case 'endActivation':
+        this.resetAttackChoices();
         this.patchUnit(e.unit, { ap: 0, glitch: false, pinned: false });
         s.activeUnit = null;
         break;
@@ -623,15 +628,30 @@ export class GameView {
     return this.display.units.find((u) => u.state !== 'dead' && u.x === x && u.y === y);
   }
 
+  /** Burst only applies if this unit's weapon can actually fire one right now. */
+  private burstFor(u: Unit): 'burst' | undefined {
+    const w = u.ranged ? WEAPONS[u.ranged] : null;
+    const rules = rulesOf(this.display);
+    return this.burst && w?.burst && rules.burst && !u.jammed && (!rules.ammo || u.ammo >= 3) ? 'burst' : undefined;
+  }
+
+  /** Firing and melee choices belong to one activation, not to whoever acts next. */
+  private resetAttackChoices(): void {
+    this.burst = false;
+    this.meleePref = false;
+    this.aimedAt = null;
+  }
+
   /** The attack a click on this enemy would make, or null if none is possible. */
   private attackOn(u: Unit, v: Unit): { kind: 'shoot' | 'melee' | 'charge'; pv: AttackPreview } | null {
     const s = this.display;
-    const ranged = u.ranged ? previewAttack(s, u, v, 'ranged', { mode: this.burst ? 'burst' : undefined, aimedAt: this.aimedAt ?? undefined }) : null;
+    const ranged = u.ranged ? previewAttack(s, u, v, 'ranged', { mode: this.burstFor(u), aimedAt: this.aimedAt ?? undefined }) : null;
     const melee = previewAttack(s, u, v, 'melee');
     const value = (p: AttackPreview) => p.chance * Math.max(0.5, p.avgDmg);
     if (this.meleePref && melee.ok) return { kind: 'melee', pv: melee };
     if (ranged?.ok && melee.ok) return value(melee) > value(ranged) ? { kind: 'melee', pv: melee } : { kind: 'shoot', pv: ranged };
-    if (ranged?.ok && !this.meleePref) return { kind: 'shoot', pv: ranged };
+    // A leftover melee preference must never stop a legal shot.
+    if (ranged?.ok) return { kind: 'shoot', pv: ranged };
     if (melee.ok) return { kind: 'melee', pv: melee };
     if (u.role === 'razor' && !u.charged) {
       const tile = chargeTile(s, u, v);
@@ -725,7 +745,7 @@ export class GameView {
     if (clicked && clicked.team !== u.team && clicked.state === 'ok') {
       const atk = this.attackOn(u, clicked);
       if (atk && u.ap >= 1) {
-        if (atk.kind === 'shoot') this.submit({ type: 'shoot', targetId: clicked.id, mode: this.burst ? 'burst' : undefined, aimedAt: this.aimedAt ?? undefined });
+        if (atk.kind === 'shoot') this.submit({ type: 'shoot', targetId: clicked.id, mode: this.burstFor(u), aimedAt: this.aimedAt ?? undefined });
         else if (atk.kind === 'melee') this.submit({ type: 'melee', targetId: clicked.id });
         else this.submit({ type: 'charge', targetId: clicked.id });
         return;
@@ -1057,7 +1077,7 @@ export class GameView {
     if (u.ranged) {
       nodes.push(btn('aim', t('action.aim'), o.aim && u.ap >= 1, () => this.submit({ type: 'aim' }), { title: t('action.aim.d'), act: 'aim' }));
       if (rules.burst && WEAPONS[u.ranged].burst) {
-        nodes.push(btn('burst', t('action.burst'), o.burst, () => { this.burst = !this.burst; sfx.click(); this.refresh(); }, { title: t('action.burst.d'), on: this.burst }));
+        nodes.push(btn('burst', t('action.burst'), o.burst || this.burst, () => { this.burst = !this.burst; sfx.click(); this.refresh(); }, { title: t('action.burst.d'), on: this.burst }));
       }
       if (rules.ammo) nodes.push(btn('reload', t('action.reload'), o.reload, () => this.submit({ type: 'reload' })));
       if (rules.overwatch) nodes.push(btn('overwatch', t('action.overwatch'), o.overwatch, () => this.submit({ type: 'overwatch' }), { title: t('action.overwatch.d') }));
@@ -1065,7 +1085,7 @@ export class GameView {
       if (rules.suppress && WEAPONS[u.ranged].burst) nodes.push(btn('suppress', t('action.suppress'), o.suppress, () => setMode({ k: 'suppress' }), { title: t('action.suppress.d'), on: modeIs('suppress') }));
     }
     if (u.ranged) {
-      nodes.push(btn('melee', t('action.melee'), o.melee || o.charge, () => { this.meleePref = !this.meleePref; sfx.click(); this.refresh(); }, { title: t('action.melee.d'), on: this.meleePref }));
+      nodes.push(btn('melee', t('action.melee'), o.melee || o.charge || this.meleePref, () => { this.meleePref = !this.meleePref; sfx.click(); this.refresh(); }, { title: t('action.melee.d'), on: this.meleePref }));
     }
     nodes.push(btn('brace', t('action.brace'), o.brace, () => this.submit({ type: 'brace' }), { title: t('action.brace.d') }));
     for (const g of o.grenades) {

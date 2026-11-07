@@ -470,9 +470,9 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       ),
       m.points > 0 && can ? el('div.camp-advance', {},
         el('h3', {}, t('camp.advance', { n: m.points })),
-        el('div.camp-events', {}, advancesFor(m.role).map((p: AdvancePick) => el('button.chip-toggle', {
+        el('div.camp-advances', {}, advancesFor(m.role).map((p: AdvancePick) => el('button.camp-advance-opt', {
           onclick: () => ctl.dispatch({ a: 'advance', id: m.id, pick: p }),
-        }, p === 'hp' ? t('camp.advance.hp') : `${t(`stat.${p}`)} +1`))),
+        }, el('b', {}, p === 'hp' ? t('camp.advance.hp') : `${t(`stat.${p}`)} +1`), el('span', {}, t(`advance.${p}.d`))))),
       ) : null,
       m.status === 'wounded' && hub && !isGm() ? el('button.btn-primary', {
         disabled: ctl.state.cash < clinicCost(m), onclick: () => ctl.dispatch({ a: 'clinic', id: m.id }),

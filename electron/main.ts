@@ -123,6 +123,8 @@ function registerLlm(): void {
 }
 
 // Two copies sharing one profile can't both save, so a second launch just brings the first one forward.
+// The menu music should start with the menu, not wait for the first click.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const firstCopy = app.requestSingleInstanceLock();
 if (!firstCopy) app.quit();
 app.on('second-instance', () => {

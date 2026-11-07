@@ -357,6 +357,18 @@ export const campaignPl: Record<string, string> = {
 };
 
 export const depthEn: Record<string, string> = {
+  'settings.music': 'Music',
+  "advance.hp.d": "More health, so this person survives more hits.",
+  "advance.quick.d": "Moves further (+1 square per 2), acts earlier, better in melee, harder to hit.",
+  "advance.aim.d": "+1 to ranged attacks and grenade throws.",
+  "advance.grit.d": "+2 health, hits harder in melee (+1 per 3), better rolls to survive.",
+  "advance.wire.d": "+1 to hacking and first aid, harder to hack.",
+  "advance.nerve.d": "+1 Luck per 3, and on the Full Contract, steadier under fire.",
+  "advance.firearms.d": "+1 to ranged attacks and grenade throws.",
+  "advance.melee.d": "+1 to melee attacks.",
+  "advance.evade.d": "Harder to hit in melee, and harder to shoot (per 4, counted with Reflex).",
+  "advance.hack.d": "+1 to hacking.",
+  "advance.medic.d": "+1 to first aid, and heals 1 more per 2.",
   'camp.hireConfirm': 'Hire a {role}?',
   'camp.hireCost': 'Cost: {cost}. You’ll have {left} left.',
   'camp.hireNote': 'Dismissing someone later gives no refund.',
@@ -518,6 +530,18 @@ export const depthEn: Record<string, string> = {
 };
 
 export const depthPl: Record<string, string> = {
+  'settings.music': 'Muzyka',
+  "advance.hp.d": "Więcej zdrowia, więc ta osoba przeżyje więcej trafień.",
+  "advance.quick.d": "Dalszy ruch (+1 pole na 2), wcześniejsza inicjatywa, lepsza walka wręcz, trudniej trafić.",
+  "advance.aim.d": "+1 do ataków dystansowych i rzutów granatem.",
+  "advance.grit.d": "+2 zdrowia, mocniejsze ciosy wręcz (+1 na 3), lepsze rzuty na przeżycie.",
+  "advance.wire.d": "+1 do hakowania i pierwszej pomocy, trudniej zhakować.",
+  "advance.nerve.d": "+1 Szczęścia na 3, a na Pełnym Kontrakcie większy spokój pod ostrzałem.",
+  "advance.firearms.d": "+1 do ataków dystansowych i rzutów granatem.",
+  "advance.melee.d": "+1 do ataków wręcz.",
+  "advance.evade.d": "Trudniej trafić wręcz i trudniej postrzelić (na 4, liczone z Refleksem).",
+  "advance.hack.d": "+1 do hakowania.",
+  "advance.medic.d": "+1 do pierwszej pomocy i leczy o 1 więcej na 2.",
   'camp.hireConfirm': 'Zatrudnić: {role}?',
   'camp.hireCost': 'Koszt: {cost}. Zostanie ci {left}.',
   'camp.hireNote': 'Późniejsze zwolnienie nie zwraca pieniędzy.',

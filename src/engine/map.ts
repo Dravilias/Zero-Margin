@@ -77,7 +77,9 @@ function canWalkBetween(grid: string[], w: number, h: number, x: number, y: numb
 
 interface Lot { x: number; y: number; w: number; h: number }
 
-function splitLot(r: Rand, lot: Lot, out: Lot[], maxW: number, maxH: number, alley: number): void {
+function splitLot(r: Rand, lot: Lot, out: Lot[], maxW: number, maxH: number, wideChance: number): void {
+  // Most gaps between buildings are streets two tiles wide; a few stay as tight one-tile alleys.
+  const alley = r.next() < wideChance ? 2 : 1;
   const tooWide = lot.w > maxW;
   const tooTall = lot.h > maxH;
   const canX = lot.w >= 2 + alley + 2;
@@ -89,12 +91,12 @@ function splitLot(r: Rand, lot: Lot, out: Lot[], maxW: number, maxH: number, all
   const splitX = canX && (!canY || tooWide || (!tooTall && r.next() < 0.5));
   if (splitX) {
     const cut = r.int(2, lot.w - 2 - alley);
-    splitLot(r, { x: lot.x, y: lot.y, w: cut, h: lot.h }, out, maxW, maxH, alley);
-    splitLot(r, { x: lot.x + cut + alley, y: lot.y, w: lot.w - cut - alley, h: lot.h }, out, maxW, maxH, alley);
+    splitLot(r, { x: lot.x, y: lot.y, w: cut, h: lot.h }, out, maxW, maxH, wideChance);
+    splitLot(r, { x: lot.x + cut + alley, y: lot.y, w: lot.w - cut - alley, h: lot.h }, out, maxW, maxH, wideChance);
   } else {
     const cut = r.int(2, lot.h - 2 - alley);
-    splitLot(r, { x: lot.x, y: lot.y, w: lot.w, h: cut }, out, maxW, maxH, alley);
-    splitLot(r, { x: lot.x, y: lot.y + cut + alley, w: lot.w, h: lot.h - cut - alley }, out, maxW, maxH, alley);
+    splitLot(r, { x: lot.x, y: lot.y, w: lot.w, h: cut }, out, maxW, maxH, wideChance);
+    splitLot(r, { x: lot.x, y: lot.y + cut + alley, w: lot.w, h: lot.h - cut - alley }, out, maxW, maxH, wideChance);
   }
 }
 
@@ -107,7 +109,7 @@ function planQuadrant(r: Rand, theme: ThemeId, size: MapSize, qw: number, qh: nu
   const g: string[] = new Array(qw * qh).fill('.');
   const mx = qw - 1;
   const my = qh - 1;
-  const halfRoad = theme === 'market' ? 0 : size === 'large' ? 2 : 1;
+  const halfRoad = size === 'large' && theme !== 'market' ? 2 : 1;
   const zone: Rect = sides === 2 ? { x: 0, y: 0, w: zones[0].w, h: qh } : zones[0];
 
   // Buildings go wherever is left once the crossroads and the deployment zone, plus a street around it, are taken out.
@@ -120,7 +122,7 @@ function planQuadrant(r: Rand, theme: ThemeId, size: MapSize, qw: number, qh: nu
   const maxW = theme === 'market' ? 3 : 4;
   const maxH = theme === 'market' ? 2 : 3;
   const lots: Lot[] = [];
-  for (const a of areas) if (a.w >= 2 && a.h >= 2) splitLot(r, a, lots, maxW, maxH, 1);
+  for (const a of areas) if (a.w >= 2 && a.h >= 2) splitLot(r, a, lots, maxW, maxH, 0.75);
   const yards: Lot[] = [];
   const openChance = theme === 'plaza' ? 0.3 : theme === 'market' ? 0.14 : 0.2;
   for (const lot of lots) {
@@ -143,6 +145,11 @@ function planQuadrant(r: Rand, theme: ThemeId, size: MapSize, qw: number, qh: nu
     const cells: [number, number][] = [];
     for (let k = 0; k < len; k++) cells.push(horizontal ? [x + k, y] : [x, y + k]);
     if (!cells.every(([a, b]) => clearFor(a, b))) return false;
+    // Cover can be vaulted, but nobody can stand on it, so it must never close a gap from wall to wall.
+    const blocked = (a: number, b: number) => a < 0 || b < 0 || at(a, b) === '#';
+    const before = horizontal ? blocked(x - 1, y) || blocked(x - 2, y) : blocked(x, y - 1) || blocked(x, y - 2);
+    const after = horizontal ? blocked(x + len, y) || blocked(x + len + 1, y) : blocked(x, y + len) || blocked(x, y + len + 1);
+    if (before && after) return false;
     for (const [a, b] of cells) g[a + b * qw] = c;
     return true;
   };
@@ -194,10 +201,124 @@ function planQuadrant(r: Rand, theme: ThemeId, size: MapSize, qw: number, qh: nu
     const touchesWall = at(x - 1, y) === '#' || at(x + 1, y) === '#' || at(x, y - 1) === '#' || at(x, y + 1) === '#';
     if (!touchesWall) continue;
     const alongRow = at(x, y - 1) === '#' || at(x, y + 1) === '#';
+    // A prop needs room left beside it, or it plugs the alley it stands in.
+    const leavesRoom = alongRow
+      ? (at(x, y - 1) !== '#' && at(x, y - 2) !== '#') || (at(x, y + 1) !== '#' && at(x, y + 2) !== '#')
+      : (at(x - 1, y) !== '#' && at(x - 2, y) !== '#') || (at(x + 1, y) !== '#' && at(x + 2, y) !== '#');
+    if (!leavesRoom) continue;
     if (placeRun(x, y, theme === 'market' ? r.int(1, 2) : 1, alongRow)) i += 1;
   }
   return g;
 }
+
+/**
+ * How many people can cross from one zone to another at once without sharing a tile. Stops counting at the limit.
+ * Only clear ground counts: low cover can be vaulted, but it costs extra and nobody can stop on it.
+ */
+export function passWidth(g: ArrayLike<string>, w: number, h: number, a: Rect, b: Rect, limit: number): number {
+  const n = w * h;
+  const source = n * 2;
+  const sink = n * 2 + 1;
+  const edges: number[][] = Array.from({ length: sink + 1 }, () => []);
+  const to: number[] = [];
+  const room: number[] = [];
+  const link = (from: number, target: number, cap: number) => {
+    edges[from].push(to.length);
+    to.push(target);
+    room.push(cap);
+    edges[target].push(to.length);
+    to.push(from);
+    room.push(0);
+  };
+  const open = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && canStand(g[x + y * w]);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!open(x, y)) continue;
+      const i = x + y * w;
+      const inA = inRect(a, x, y);
+      const inB = inRect(b, x, y);
+      // Each tile fits one person, except in the zones where everyone starts and finishes.
+      link(i * 2, i * 2 + 1, inA || inB ? limit : 1);
+      if (inA) link(source, i * 2, limit);
+      if (inB) link(i * 2 + 1, sink, limit);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if ((!dx && !dy) || !open(x + dx, y + dy)) continue;
+          if (dx && dy && (!open(x + dx, y) || !open(x, y + dy))) continue;
+          link(i * 2 + 1, (x + dx + (y + dy) * w) * 2, 1);
+        }
+      }
+    }
+  }
+  let flow = 0;
+  while (flow < limit) {
+    const came = new Int32Array(sink + 1).fill(-1);
+    came[source] = -2;
+    const queue = [source];
+    for (let q = 0; q < queue.length && came[sink] === -1; q++) {
+      for (const e of edges[queue[q]]) {
+        if (room[e] > 0 && came[to[e]] === -1) {
+          came[to[e]] = e;
+          queue.push(to[e]);
+        }
+      }
+    }
+    if (came[sink] === -1) break;
+    for (let v = sink; v !== source; v = to[came[v] ^ 1]) {
+      room[came[v]] -= 1;
+      room[came[v] ^ 1] += 1;
+    }
+    flow += 1;
+  }
+  return flow;
+}
+
+/** The narrowest clear route from the first zone to any other. Zones mirror each other, so that covers them all. */
+function narrowestPass(g: string[], w: number, h: number, zones: Rect[], limit: number): number {
+  let width = limit;
+  for (const z of zones.slice(1, 3)) width = Math.min(width, passWidth(g, w, h, zones[0], z, limit));
+  return width;
+}
+
+/**
+ * Takes away just enough cover to leave clear routes across the board, keeping it symmetrical for every player.
+ * Pieces that widen the route go first, so the cover that remains is the cover nobody has to climb over.
+ */
+function openUpCover(r: Rand, g: string[], w: number, h: number, zones: Rect[], target: number): void {
+  const set = new Set<string>();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (g[x + y * w] === 'c') set.add(`${Math.min(x, w - 1 - x)},${Math.min(y, h - 1 - y)}`);
+    }
+  }
+  const pieces = [...set].map((key) => {
+    const [x, y] = key.split(',').map(Number);
+    return [...new Set([x + y * w, w - 1 - x + y * w, x + (h - 1 - y) * w, w - 1 - x + (h - 1 - y) * w])];
+  });
+  for (let i = pieces.length - 1; i > 0; i--) {
+    const j = r.int(0, i);
+    [pieces[i], pieces[j]] = [pieces[j], pieces[i]];
+  }
+  let width = narrowestPass(g, w, h, zones, target);
+  while (width < target && pieces.length) {
+    let chosen = pieces.length - 1;
+    for (let i = 0; i < pieces.length; i++) {
+      for (const k of pieces[i]) g[k] = '.';
+      const wider = narrowestPass(g, w, h, zones, target) > width;
+      for (const k of pieces[i]) g[k] = 'c';
+      if (wider) {
+        chosen = i;
+        break;
+      }
+    }
+    for (const k of pieces[chosen]) g[k] = '.';
+    pieces.splice(chosen, 1);
+    width = narrowestPass(g, w, h, zones, target);
+  }
+}
+
+/** No board may funnel a whole crew through a gap narrower than this. */
+const MIN_PASS_WIDTH: Record<MapSize, number> = { small: 4, medium: 5, large: 6 };
 
 export function generateMap(seed: number, size: MapSize, theme: ThemeId, sides: number, scenario: ScenarioId): MapData {
   const [w, h] = SIZES[size];
@@ -257,6 +378,8 @@ export function generateMap(seed: number, size: MapSize, theme: ThemeId, sides: 
     const core = scenario === 'heist' ? { x: mx, y: my } : null;
     if (core) g[core.x + core.y * w] = '.';
 
+    openUpCover(r, g, w, h, zones, MIN_PASS_WIDTH[size]);
+
     // Everything has to be reachable, and the board needs some substance.
     const start = zones[0];
     const sx = start.x + Math.floor(start.w / 2);
@@ -269,6 +392,7 @@ export function generateMap(seed: number, size: MapSize, theme: ThemeId, sides: 
     if (core && !canWalkBetween(g, w, h, sx, sy, core.x, core.y)) ok = false;
     const solid = g.filter((c) => c === '#').length / (w * h);
     if (solid > 0.32 || solid < 0.12) ok = false;
+    if (ok && narrowestPass(g, w, h, zones, MIN_PASS_WIDTH[size]) < MIN_PASS_WIDTH[size]) ok = false;
     if (!ok && attempt < 59) continue;
 
     return {
