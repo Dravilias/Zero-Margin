@@ -291,11 +291,38 @@ describe('players', () => {
     expect(refused(s, { a: 'gmEvent', kind: 'windfall' }, 2)).toBe('gmOnly');
   });
 
+  it('lets about half of all failed free actions pass without a penalty', () => {
+    let failed = 0;
+    let quiet = 0;
+    let threat = 0;
+    let rep = 0;
+    for (let seed = 1; seed <= 600; seed++) {
+      const r = applyCampaign(newCamp({ llm: true, seed }), { a: 'freeRoll', text: 'I bluff the guard', actor: 1, stat: 'wire', tn: 20, from: 'Host' }, 0).roll!;
+      if (r.ok) {
+        expect(r.cash).toBeGreaterThanOrEqual(100);
+        expect(r.threat + r.rep).toBe(0);
+        continue;
+      }
+      failed++;
+      expect(r.cash).toBe(0);
+      expect(r.threat && r.rep).toBe(0);
+      if (r.threat) threat++;
+      else if (r.rep) rep++;
+      else quiet++;
+    }
+    expect(failed).toBeGreaterThan(300);
+    expect(quiet / failed).toBeGreaterThan(0.4);
+    expect(quiet / failed).toBeLessThan(0.6);
+    expect(threat).toBeGreaterThan(0);
+    expect(rep).toBeGreaterThan(0);
+  });
+
   it('rolls free actions with the engine and limits them', () => {
     let s = newCamp({ llm: true });
     const one = applyCampaign(s, { a: 'freeRoll', text: 'I bluff the guard', actor: 1, stat: 'nerve', tn: 99, from: 'Host' }, 0);
     expect(one.ok).toBe(true);
-    expect(one.roll!.tn).toBe(20);
+    // However hard the model calls it, a 10 on the die still gets there.
+    expect(one.roll!.tn).toBe(one.roll!.mod + 10);
     s = one.state;
     s = act(s, { a: 'freeRoll', text: 'Again', actor: 1, stat: 'aim', tn: 1, from: 'Host' });
     expect(refused(s, { a: 'freeRoll', text: 'Once more', actor: 1, stat: 'aim', tn: 10, from: 'Host' })).toBe('freeUsed');

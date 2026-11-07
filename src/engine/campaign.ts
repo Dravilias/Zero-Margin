@@ -847,14 +847,17 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       const m = member(s, act.actor);
       if (m.status === 'dead') refuse('noCrew');
       if (!STAT_KEYS.includes(act.stat)) refuse('badStat');
-      const tn = Math.max(8, Math.min(20, Math.round(act.tn)));
+      const mod = statLine(m)[act.stat] + m.level - 1;
+      // A 10 on the die always gets there, so nothing is hopeless before the roll.
+      const tn = Math.min(mod + 10, Math.max(8, Math.min(20, Math.round(act.tn))));
       const r = new Rand(s.rng);
       const nat = r.d(10);
-      const mod = statLine(m)[act.stat] + m.level - 1;
       const ok = nat + mod >= tn;
       const cash = ok ? 50 * r.int(2, 6) : 0;
-      const threat = ok ? 0 : r.next() < 0.5 ? 1 : 0;
-      const rep = !ok && threat === 0 ? -1 : 0;
+      // Half of all failures just don't work out, so trying something is worth the risk.
+      const fallout = ok ? 1 : r.next();
+      const threat = fallout < 0.25 ? 1 : 0;
+      const rep = fallout >= 0.25 && fallout < 0.5 ? -1 : 0;
       s.rng = r.state;
       s.cash += cash;
       s.rep += rep;

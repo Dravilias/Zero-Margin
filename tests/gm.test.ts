@@ -2,9 +2,9 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { callChat, callWithFallbacks, normalizeEndpoint, readReply } from '../electron/llm';
-import { applyCampaign, availableGigs, createCampaign, nodeOf, starterCrew, END, type CampaignState } from '../src/engine/campaign';
+import { applyCampaign, availableGigs, createCampaign, freeLeft, nodeOf, starterCrew, END, type CampaignState } from '../src/engine/campaign';
 import { CampaignHost } from '../src/net/campaignNet';
-import { isCleanText, parseJudgement, planToArc, usableNarration, writeArc, type LlmReply, type LlmRequest, type LlmTransport } from '../src/net/gm';
+import { isCleanText, isFiller, outcomeRequest, parseJudgement, planToArc, usableNarration, writeArc, type LlmReply, type LlmRequest, type LlmTransport } from '../src/net/gm';
 import { THE_NOTE } from '../src/engine/story';
 
 (globalThis as any).localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
@@ -103,8 +103,10 @@ describe('stories written by a model', () => {
   });
 
   it('bounds what the game master can decide for a free action', () => {
-    expect(parseJudgement('{"stat":"luck","tn":500,"reply":"x"}')).toEqual({ stat: 'nerve', tn: 19, reply: 'x' });
-    expect(parseJudgement('garbage')).toEqual({ stat: 'nerve', tn: 13, reply: '' });
+    expect(parseJudgement('{"stat":"luck","tn":500,"reply":"x"}')).toEqual({ stat: 'nerve', tn: 16, unclear: false, reply: 'x' });
+    expect(parseJudgement('garbage')).toEqual({ stat: 'nerve', tn: 11, unclear: false, reply: '' });
+    expect(parseJudgement('{"stat":"grit","tn":1,"unclear":true}').unclear).toBe(true);
+    expect(parseJudgement('{"stat":"grit","tn":1,"unclear":"yes"}')).toMatchObject({ tn: 8, unclear: false });
   });
 });
 
@@ -160,6 +162,62 @@ describe('the game master during play', () => {
     expect(failing.state.transcript.some((l) => l.kind === 'result')).toBe(true);
     expect(failing.state.busy).toBe(false);
     expect(before).toBeGreaterThan(0);
+  });
+
+  it('charges nothing for words that aren’t an attempt, and stops asking the model after a few', async () => {
+    let judged = 0;
+    const host = make(async (r) => {
+      if (r.json) {
+        judged++;
+        return { ok: true, text: '{"stat":"nerve","tn":11,"unclear":true,"reply":""}' };
+      }
+      return { ok: true, text: 'Deszcz pada na blaszany dach nad Nabrzeżem.' };
+    });
+    host.begin();
+    await settle();
+    const { cash, rep, threatMod } = host.state;
+    const left = freeLeft(host.state);
+    for (let i = 0; i < 5; i++) {
+      host.dispatch({ a: 'freeAsk', text: 'plover gantry', actor: 1 });
+      await settle();
+    }
+    expect(judged).toBe(3);
+    expect(freeLeft(host.state)).toBe(left);
+    expect(host.state).toMatchObject({ cash, rep, threatMod, busy: false });
+    const lines = host.state.transcript.filter((l) => l.kind === 'result');
+    expect(lines).toHaveLength(3);
+    expect(lines[0].text).toEqual({ k: 'free.unclear', v: { name: host.state.crew[0].name } });
+  });
+
+  it('catches filler words itself, without asking a model or charging anything', async () => {
+    for (const word of ['ok', 'OK.', 'okay!', 'tak', 'Nie', 'hmm', 'x', '???', 'cześć']) expect(isFiller(word), word).toBe(true);
+    for (const real of ['Run', 'uciekam', 'I bluff the guard', 'test the door', 'okay, I kick it open']) expect(isFiller(real), real).toBe(false);
+    let judged = 0;
+    const host = make(async (r) => {
+      if (r.json) {
+        judged++;
+        return { ok: true, text: '{"stat":"nerve","tn":11,"reply":""}' };
+      }
+      return { ok: true, text: 'Deszcz pada na blaszany dach nad Nabrzeżem.' };
+    });
+    host.begin();
+    await settle();
+    const { cash, rep, threatMod } = host.state;
+    const left = freeLeft(host.state);
+    host.dispatch({ a: 'freeAsk', text: 'ok', actor: 1 });
+    await settle();
+    expect(judged).toBe(0);
+    expect(freeLeft(host.state)).toBe(left);
+    expect(host.state).toMatchObject({ cash, rep, threatMod, busy: false });
+    expect(host.state.transcript.at(-1)!.text).toEqual({ k: 'free.unclear', v: { name: host.state.crew[0].name } });
+  });
+
+  it('keeps instructions about the game out of what a model is asked to retell', () => {
+    const c = { state: createCampaign({ id: 'a', mode: 'story', ruleset: 'standard', crewName: 'C', seed: 3, hostName: 'H', crew: starterCrew(3), arc: THE_NOTE, llm: true, online: false, gm: 'computer' }), lang: 'en', resolve: String } as never;
+    const req = outcomeRequest(c, 'ok', 'Tess', false, '', 'On the dock.');
+    // A model repeated a sentence like this to the player word for word, so it can't sit next to the story.
+    expect(req.prompt).not.toMatch(/choices|the crew stay/i);
+    expect(req.system).toMatch(/Never comment on the game/);
   });
 
   it('never calls a model when the campaign doesn’t use one', async () => {

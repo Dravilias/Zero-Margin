@@ -64,7 +64,7 @@ export const campaignEn: Record<string, string> = {
   'camp.startingCrew': 'Starting crew',
   'camp.begin': 'Begin',
   'camp.writing': 'Writing your story',
-  'camp.writing.d': 'The writer model is working on it. This can take up to a minute.',
+  'camp.writing.d': 'The writer model is working on it. This can take a few minutes.',
   'camp.llmFail.nokey': 'No model server or model name is set, so the written story is used instead.',
   'camp.llmFail.quota': 'The model server’s limit has run out, so the written story and text are used for now.',
   'camp.llmFail.blocked': 'The model refused that request, so the written story and text are used instead.',
@@ -133,6 +133,7 @@ export const campaignEn: Record<string, string> = {
   'free.gain': 'The crew comes out {cash} cr ahead.',
   'free.heat': 'Word gets out. The next fight will be harder.',
   'free.rep': 'That costs the crew some reputation.',
+  'free.unclear': 'The game master can’t tell what {name} is trying to do. Nothing happens, and it doesn’t use up an attempt.',
 
   'gmevent.ambush': 'Ambush',
   'gmevent.ambush.d': 'The next fight is harder. Once per job.',
@@ -244,7 +245,7 @@ export const campaignPl: Record<string, string> = {
   'camp.startingCrew': 'Początkowa ekipa',
   'camp.begin': 'Zacznij',
   'camp.writing': 'Powstaje wasza historia',
-  'camp.writing.d': 'Pracuje nad nią model-scenarzysta. To może potrwać do minuty.',
+  'camp.writing.d': 'Pracuje nad nią model-scenarzysta. To może potrwać kilka minut.',
   'camp.llmFail.nokey': 'Nie ustawiono serwera ani nazwy modelu, więc zamiast tego gra używa napisanej historii.',
   'camp.llmFail.quota': 'Skończył się limit na serwerze modeli, więc na razie gra używa napisanej historii i tekstów.',
   'camp.llmFail.blocked': 'Model odrzucił to zapytanie, więc zamiast tego gra używa napisanej historii i tekstów.',
@@ -313,6 +314,7 @@ export const campaignPl: Record<string, string> = {
   'free.gain': 'Ekipa jest {cash} kr do przodu.',
   'free.heat': 'Wieść się rozchodzi. Następna walka będzie trudniejsza.',
   'free.rep': 'To kosztuje ekipę trochę renomy.',
+  'free.unclear': 'Mistrz gry nie wie, czego próbuje {name}. Nic się nie dzieje, a próba się nie zużywa.',
 
   'gmevent.ambush': 'Zasadzka',
   'gmevent.ambush.d': 'Następna walka jest trudniejsza. Raz na zlecenie.',

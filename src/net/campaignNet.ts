@@ -1,10 +1,10 @@
 import {
-  applyCampaign, buildMission, freeLeft, missionResult, nodeOf, MAX_PLAYERS, type Arc, type CampaignAction, type CampaignState, type Player, type Txt,
+  applyCampaign, buildMission, freeLeft, freePlace, missionResult, nodeOf, MAX_PLAYERS, type Arc, type CampaignAction, type CampaignState, type Player, type Txt,
 } from '../engine/campaign';
 import { setSideControl } from '../engine/game';
 import type { GameState } from '../engine/types';
 import {
-  debriefRequest, judgeRequest, outcomeRequest, parseJudgement, sceneRequest, usableNarration, writeArc, type GmLang, type LlmFailure, type LlmTransport, type RunnerContext,
+  debriefRequest, isFiller, judgeRequest, outcomeRequest, parseJudgement, sceneRequest, usableNarration, writeArc, type GmLang, type LlmFailure, type LlmTransport, type RunnerContext,
 } from './gm';
 import { RelayClient, type PeerInfo, type RelayStatus } from './relayClient';
 import { GuestSession, HostSession, LocalSession, reportSave, type CampaignPolicy, type GameSession, type GuestMsg, type HostMsg } from './sessions';
@@ -14,6 +14,7 @@ import { GuestSession, HostSession, LocalSession, reportSave, type CampaignPolic
 const INDEX_KEY = 'zm.campaigns.v1';
 const slotKey = (id: string) => `zm.campaign.${id}`;
 export const MAX_SAVES = 8;
+const MAX_UNCLEAR_PER_PLACE = 3;
 
 export interface CampaignSave { camp: CampaignState; game: GameState | null; online: boolean; keys?: Record<number, string> }
 export interface CampaignSaveInfo { id: string; crewName: string; mode: CampaignState['mode']; title: Txt | null; chapter: number; chapters: number; gigsDone: number; arcsDone: number; cash: number; online: boolean; savedAt: number }
@@ -425,6 +426,15 @@ export class CampaignHost implements CampaignController {
     }
   }
 
+  private unclear = { place: '', count: 0 };
+
+  private noteUnclear(place: string, text: string, slot: number, name: string): void {
+    this.unclear = { place, count: this.unclear.place === place ? this.unclear.count + 1 : 1 };
+    const from = this.state.players[slot]?.name ?? '';
+    this.internal({ a: 'transcript', line: { kind: 'free', text, from } });
+    this.internal({ a: 'transcript', line: { kind: 'result', text: { k: 'free.unclear', v: { name } } } });
+  }
+
   /** A player tried something the written choices don't cover. The model judges it, the engine rolls it. */
   private async freeAsk(slot: number, raw: string, actorId: number): Promise<void> {
     const text = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -432,12 +442,23 @@ export class CampaignHost implements CampaignController {
     const actor = s.crew.find((m) => m.id === actorId && m.status !== 'dead');
     if (!this.hasLlm || s.busy || !text || !actor || freeLeft(s) <= 0 || (s.phase !== 'scene' && s.phase !== 'hub')) return;
     if (slot === s.gmSlot) return;
+    // Unclear words cost the player nothing, so this stops them costing the host endless model calls.
+    const place = freePlace(s);
+    if (this.unclear.place === place && this.unclear.count >= MAX_UNCLEAR_PER_PLACE) return;
+    if (isFiller(text)) {
+      this.noteUnclear(place, text, slot, actor.name);
+      return;
+    }
     const node = nodeOf(s);
     const situation = node?.kind === 'scene' ? (s.narration[node.id] ?? this.o.resolve(node.text)) : `Between jobs at the crew's base. Cash ${s.cash}.`;
     await this.narrate(async () => {
       const judged = await this.llm!.generate(judgeRequest(this.ctx(), text, { name: actor.name, role: actor.role }, situation));
       if (!judged.ok) this.lastLlmFailure = judged.reason;
       const j = parseJudgement(judged.ok ? judged.text : '{}');
+      if (j.unclear) {
+        this.noteUnclear(place, text, slot, actor.name);
+        return;
+      }
       const res = applyCampaign(this.state, { a: 'freeRoll', text, actor: actor.id, stat: j.stat, tn: j.tn, from: this.state.players[slot]?.name ?? '' }, 0);
       if (!res.ok || !res.roll) return;
       this.commit(res.state);
