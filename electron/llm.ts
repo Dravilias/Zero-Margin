@@ -21,7 +21,9 @@ const FALLBACK_TIMEOUT_MS = 120000;
 function isPrivateHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, '');
   if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h === '::1') return true;
-  return /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+  // IPv6 addresses kept inside a home or office network: unique local (fc00::/7) and link-local (fe80::/10).
+  if (h.includes(':') && /^(f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):/.test(h)) return true;
+  return /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
 }
 
 /**

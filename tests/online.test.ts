@@ -4,7 +4,7 @@ import { GAME_VERSION, GuestSession, GuestTable, HostSession, HostTable, setSave
 import { newTable, startProblems, tableToConfig } from '../src/net/table';
 import { createGame } from '../src/engine/game';
 // @ts-expect-error the relay is plain JavaScript so it can run in a small container
-import { startRelay } from '../relay/server.mjs';
+import { isPrivate, startRelay } from '../relay/server.mjs';
 import { chooseAction } from '../src/engine/ai';
 import { Rand } from '../src/engine/rng';
 import { createCampaign, starterCrew } from '../src/engine/campaign';
@@ -55,6 +55,23 @@ describe('relay', () => {
     expect(atGuest).toEqual({ hello: 2 });
     host.close();
     await wait(30);
+  });
+
+  it('caps how many rooms and connections one address can hold', async () => {
+    const small = await startRelay({ port: 0, createsPerMinute: 500, joinsPerMinute: 500, maxRoomsPerIp: 2, maxSocketsPerIp: 3, limitPrivate: true });
+    const at = `ws://127.0.0.1:${small.port}`;
+    const hosts = [new RelayClient(at), new RelayClient(at), new RelayClient(at)];
+    await hosts[0].create('A');
+    await hosts[1].create('B');
+    await expect(hosts[2].create('C')).rejects.toMatchObject({ code: 'rate' });
+    await expect(new RelayClient(at).create('D')).rejects.toBeTruthy();
+    for (const h of hosts) h.close();
+    await small.close();
+  });
+
+  it('only believes a proxy header from a private address', () => {
+    for (const a of ['127.0.0.1', '::1', '::ffff:10.0.0.4', '172.18.0.1', '192.168.1.5', 'fd00::1', 'fe80::1']) expect(isPrivate(a)).toBe(true);
+    for (const a of ['8.8.8.8', '172.32.0.1', '2001:db8::1', 'unknown']) expect(isPrivate(a)).toBe(false);
   });
 
   it('refuses an unknown code', async () => {

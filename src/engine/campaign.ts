@@ -90,6 +90,8 @@ export interface CrewMember {
   kills: number;
   /** Their own icon instead of the role's, if the player picked one. */
   icon?: string;
+  /** Implants taken out again. They're paid for, in money and humanity, so they go back in for nothing. */
+  spareChrome?: ChromeId[];
 }
 
 /** The built-in symbols a character can wear. Their drawings live with the other icons. */
@@ -161,7 +163,13 @@ export interface CampaignState {
   gigsDone: number;
   threatMod: number;
   freeUsed: string[];
+  /** Story jobs already lost once. A second loss pays nothing, so losing on purpose isn't a living. */
+  lostGigs?: string[];
   gmEventUsed: boolean;
+  /** Something that happened between jobs and is waiting for the crew's answer. */
+  street?: { id: string; who?: number } | null;
+  /** The last thing that happened, so the same one doesn't come up twice running. */
+  streetLast?: string;
   busy: boolean;
   phase: CampaignPhase;
   mission: { gig: Gig; squad: number[] } | null;
@@ -176,6 +184,7 @@ export const CREDITS_PER_POINT = 50;
 export const MAX_CREW = 10;
 export const MAX_SQUAD = 6;
 export const MAX_CHROME = 4;
+const MIN_HUMANITY_MAX = 10;
 export const MAX_PLAYERS = 4;
 export const START_CASH = 1000;
 export const REST_COST = 150;
@@ -206,6 +215,16 @@ export function advancesFor(role: RoleId): AdvancePick[] {
   return ['hp', ...stats, ...skills];
 }
 
+/** How many more times this advance can be taken. */
+export function advanceRoom(m: CrewMember, pick: AdvancePick): number {
+  if (pick === 'hp') return MAX_BONUS - m.bonus.hp / 3;
+  if ((STAT_KEYS as string[]).includes(pick)) return MAX_BONUS - (m.bonus.stats[pick as keyof Stats] ?? 0);
+  return MAX_BONUS - (m.bonus.skills[pick as keyof Skills] ?? 0);
+}
+
+/** Paid out for a level when there's nothing left to learn. */
+export const MASTERY_BONUS = 150;
+
 export const statLine = (m: CrewMember): Stats => {
   const base = ROLES[m.role].stats;
   const out = { ...base };
@@ -224,7 +243,7 @@ export function pickHandle(seed: number, taken: string[]): string {
 
 export function makeCrew(id: number, role: RoleId, name: string, owner = 0, stats: Partial<Stats> = {}): CrewMember {
   const def = ROLES[role];
-  const humanity = 30 + (def.stats.nerve + (stats.nerve ?? 0)) * 4;
+  const humanity = 24 + (def.stats.nerve + (stats.nerve ?? 0)) * 4;
   return {
     id, name: name.slice(0, 24), role, ranged: def.ranged[0], melee: def.melee[0], chrome: [], owned: [def.ranged[0], def.melee[0]].filter((w): w is WeaponId => !!w), extra: { frag: 0, smoke: 0, emp: 0 },
     bonus: { hp: 0, stats: { ...stats }, skills: {} }, humanity, humanityMax: humanity, injuries: [], level: 1, xp: 0, points: 0, owner, status: 'ok', missions: 0, kills: 0,
@@ -283,6 +302,9 @@ export function baseThreat(s: CampaignState): number {
   return 1 + Math.floor(s.gigsDone / 2) + s.arcsDone;
 }
 
+/** A crew with a name gets better offers from the job board, and a crew with a bad one gets worse. */
+export const repPay = (rep: number): number => 1 + Math.max(-10, Math.min(15, rep)) * 0.02;
+
 function refreshOffers(s: CampaignState): void {
   const r = new Rand(s.rng);
   const count = s.mode === 'endless' ? 3 : 2;
@@ -293,7 +315,7 @@ function refreshOffers(s: CampaignState): void {
     const titleN = r.int(0, 2);
     return {
       id: `o${s.gigsDone}-${i}`, story: false, mapSeed: r.int(1, 0x7ffffff), scenario, enemy: r.pick(DEFAULT_ENEMIES), theme: r.pick(THEMES),
-      threat: gigThreat, pay: 350 + gigThreat * 200 + r.int(0, 4) * 25,
+      threat: gigThreat, pay: Math.round((350 + gigThreat * 200 + r.int(0, 4) * 25) * repPay(s.rep) / 25) * 25,
       title: `gigt.${scenario}.${titleN}`, brief: `gigb.${scenario}.${titleN}`, won: `gig.won.${r.int(0, 2)}`, lost: `gig.lost.${r.int(0, 2)}`,
     };
   });
@@ -337,8 +359,15 @@ const BARE_VALUE_PER_PERSON = 22;
 export function enemyPoints(squad: CrewMember[], threat: number): number {
   const bare = squad.length * BARE_VALUE_PER_PERSON;
   const earned = Math.max(0, crewValue(squad) - bare);
-  return Math.max(40, Math.round((bare + earned * 0.25) * (0.72 + 0.05 * threat)));
+  return Math.max(MIN_ENEMY_POINTS, Math.round((bare + earned * 0.25) * (0.72 + 0.05 * threat)));
 }
+
+/** Enough for a couple of street-level enemies, so even one person alone gets a fight and not a walkover. */
+const MIN_ENEMY_POINTS = 20;
+const MAX_ENEMIES = 10;
+/** What one step of extra training costs once the other side can't field more people. */
+const VETERAN_COST = 8;
+const MAX_VETERAN_STEPS = 4;
 
 export function enemyRoster(faction: FactionId, points: number, threat: number): Loadout[] {
   const pool = defaultRoster(faction, 9999);
@@ -346,7 +375,7 @@ export function enemyRoster(faction: FactionId, points: number, threat: number):
   let left = points;
   // Hard fights bring sharper people, not just more of them.
   const edge = threat >= 6 ? 2 : threat >= 4 ? 1 : 0;
-  for (let i = 0; out.length < 10 && i < pool.length * 3; i++) {
+  for (let i = 0; out.length < MAX_ENEMIES && i < pool.length * 3; i++) {
     const l = structuredClone(pool[i % pool.length]);
     const cost = rosterCost(faction, [l]);
     if (cost > left) continue;
@@ -356,6 +385,18 @@ export function enemyRoster(faction: FactionId, points: number, threat: number):
     left -= cost;
   }
   if (!out.length) out.push(makeLoadout('punk', 'pistol', 'shiv'));
+  // A full squad spends what's left on training, so a high threat keeps getting harder after the headcount stops growing.
+  for (let step = 0; step < MAX_VETERAN_STEPS && out.length >= MAX_ENEMIES; step++) {
+    for (const l of out) {
+      if (left < VETERAN_COST) return out;
+      const b = (l.bonus ??= {});
+      const stats = (b.stats ??= {});
+      b.hp = (b.hp ?? 0) + 2;
+      if (step % 2 === 0) stats.aim = (stats.aim ?? 0) + 1;
+      else stats.quick = (stats.quick ?? 0) + 1;
+      left -= VETERAN_COST;
+    }
+  }
   return out;
 }
 
@@ -421,7 +462,10 @@ function applyResult(s: CampaignState, result: MissionResult): void {
   const alive = (role: RoleId) => s.crew.filter((m) => m.role === role && m.status !== 'dead').reduce((best, m) => Math.max(best, m.level), 0);
   // A broker haggles the fee up; a face makes sure people hear about the win.
   const haggle = 1 + Math.min(0.3, alive('broker') * 0.05);
-  const pay = Math.round((result.won ? gig.pay : result.fled ? 0 : gig.pay * 0.2) * haggle);
+  // The client pays expenses for one honest failure, and nothing for the next.
+  const lostBefore = gig.story && (s.lostGigs ?? []).includes(gig.id);
+  if (gig.story && !result.won && !lostBefore) s.lostGigs = [...(s.lostGigs ?? []), gig.id];
+  const pay = Math.round((result.won ? gig.pay : result.fled || lostBefore ? 0 : gig.pay * 0.2) * haggle);
   const rep = result.won ? 1 + (alive('face') ? 1 : 0) : -1;
   s.cash += pay;
   s.rep += rep;
@@ -437,7 +481,7 @@ function applyResult(s: CampaignState, result: MissionResult): void {
     if (!m || !r) return;
     // Only the Full Contract keeps its dead. In lighter rules a fallen character is hurt and out of the next job.
     const outcome: CrewStatus = r.state === 'ok' ? 'ok' : r.state === 'dead' && s.ruleset === 'full' ? 'dead' : 'wounded';
-    const xp = result.fled ? 0 : 1 + (result.won ? 1 : 0) + r.kills;
+    const xp = result.fled ? 0 : (lostBefore && !result.won ? 0 : 1) + (result.won ? 1 : 0) + r.kills;
     m.status = outcome;
     if (s.ruleset !== 'quick') for (const i of r.injuries ?? []) if (!m.injuries.includes(i)) m.injuries.push(i);
     m.kills += r.kills;
@@ -448,7 +492,9 @@ function applyResult(s: CampaignState, result: MissionResult): void {
       while (m.xp >= xpToNext(m)) {
         m.xp -= xpToNext(m);
         m.level += 1;
-        m.points += 1;
+        // Someone with nothing left to learn gets a bonus in place of an advance they couldn't spend.
+        if (advancesFor(m.role).reduce((n, p) => n + Math.max(0, advanceRoom(m, p)), 0) > m.points) m.points += 1;
+        else s.cash += MASTERY_BONUS;
         levelUp = true;
       }
     }
@@ -479,7 +525,118 @@ function closeDebrief(s: CampaignState): void {
     const n = nodeOf(s, mission.gig.id);
     if (n?.kind === 'gig') follow(s, n.next ?? nodeAfter(s, n.id));
   }
-  if (s.phase === 'hub') refreshOffers(s);
+  if (s.phase === 'hub') {
+    refreshOffers(s);
+    rollStreet(s);
+  }
+}
+
+/* ---------- Between jobs: things that happen on the street ---------- */
+
+export interface StreetChoice {
+  id: string;
+  /** Negative costs money, and the choice needs that much in hand. */
+  cash?: number;
+  rep?: number;
+  threat?: number;
+  /** Change to the humanity of the person the event is about. */
+  humanity?: number;
+  /** Change to everyone's humanity. */
+  crewHumanity?: number;
+  /** The person the event is about is back on their feet. */
+  heal?: boolean;
+  /** The person the event is about gets one more of these. */
+  grenade?: GrenadeKind;
+  /** A new recruit joins for nothing. */
+  hire?: boolean;
+  /** Two dice at this or more pays `win`. */
+  bet?: { need: number; win: number };
+}
+
+export interface StreetEvent {
+  id: string;
+  /** Who it's about: someone losing themselves, someone wounded, or anyone standing. */
+  who?: 'drifting' | 'wounded' | 'anyone';
+  when?: (s: CampaignState) => boolean;
+  /** The last choice is what happens if the crew leaves for a job without answering. */
+  choices: [StreetChoice, StreetChoice];
+}
+
+const alive = (s: CampaignState): CrewMember[] => s.crew.filter((m) => m.status !== 'dead');
+const drifting = (m: CrewMember): boolean => m.status !== 'dead' && m.humanity * 2 <= m.humanityMax;
+
+export const STREET_CHANCE = 0.5;
+export const STREET_EVENTS: StreetEvent[] = [
+  { id: 'debt', choices: [{ id: 'pay', cash: -200, rep: 1 }, { id: 'stall', threat: 1 }] },
+  { id: 'tip', choices: [{ id: 'buy', cash: -150, threat: -1 }, { id: 'pass' }] },
+  { id: 'salvage', who: 'anyone', choices: [{ id: 'sell', cash: 200 }, { id: 'keep', grenade: 'frag' }] },
+  { id: 'neighbors', choices: [{ id: 'give', cash: -200, rep: 2 }, { id: 'refuse', rep: -1 }] },
+  { id: 'rival', choices: [{ id: 'split', cash: 250, rep: -1 }, { id: 'refuse' }] },
+  { id: 'dice', choices: [{ id: 'bet', cash: -200, bet: { need: 8, win: 600 } }, { id: 'walk' }] },
+  { id: 'fixer', when: (s) => s.rep >= 3, choices: [{ id: 'take', cash: 300 }, { id: 'favor', rep: 1, threat: -1 }] },
+  { id: 'grudge', when: (s) => s.rep <= -2, choices: [{ id: 'pay', cash: -250, rep: 1 }, { id: 'face', threat: 1 }] },
+  { id: 'drift', who: 'drifting', choices: [{ id: 'night', cash: -100, humanity: 8 }, { id: 'leave', humanity: -3 }] },
+  { id: 'doc', who: 'wounded', choices: [{ id: 'pay', cash: -100, heal: true }, { id: 'no' }] },
+  { id: 'kid', when: (s) => alive(s).length < MAX_CREW, choices: [{ id: 'take', hire: true }, { id: 'send' }] },
+  { id: 'wake', when: (s) => s.crew.some((m) => m.status === 'dead'), choices: [{ id: 'hold', cash: -150, crewHumanity: 4 }, { id: 'skip' }] },
+];
+
+export const streetEvent = (s: CampaignState): StreetEvent | null => STREET_EVENTS.find((e) => e.id === s.street?.id) ?? null;
+export const streetAllowed = (s: CampaignState, c: StreetChoice): boolean => s.cash >= -(c.cash ?? 0) && (!c.hire || alive(s).length < MAX_CREW);
+
+function streetWho(s: CampaignState, e: StreetEvent): CrewMember[] {
+  if (e.who === 'drifting') return s.crew.filter(drifting);
+  if (e.who === 'wounded') return s.crew.filter((m) => m.status === 'wounded');
+  return alive(s);
+}
+
+/** Sometimes, back from a job, the city has something to say. */
+function rollStreet(s: CampaignState): void {
+  s.street = null;
+  if (!alive(s).length) return;
+  const r = new Rand(s.rng);
+  if (r.next() < STREET_CHANCE) {
+    const open = STREET_EVENTS.filter((e) => e.id !== s.streetLast && (!e.when || e.when(s)) && (!e.who || streetWho(s, e).length));
+    if (open.length) {
+      const e = r.pick(open);
+      s.street = e.who ? { id: e.id, who: r.pick(streetWho(s, e)).id } : { id: e.id };
+      s.streetLast = e.id;
+    }
+  }
+  s.rng = r.state;
+}
+
+function answerStreet(s: CampaignState, choice: string | null, log: boolean): void {
+  const e = streetEvent(s);
+  const pending = s.street;
+  s.street = null;
+  if (!e || !pending) return;
+  const c = choice === null ? e.choices[1] : e.choices.find((x) => x.id === choice) ?? refuse('badChoice');
+  if (!streetAllowed(s, c)) refuse('noCash');
+  const who = s.crew.find((m) => m.id === pending.who && m.status !== 'dead');
+  s.cash = Math.max(0, s.cash + (c.cash ?? 0));
+  s.rep += c.rep ?? 0;
+  s.threatMod += c.threat ?? 0;
+  const feel = (m: CrewMember, n: number) => { m.humanity = Math.max(0, Math.min(m.humanityMax, m.humanity + n)); };
+  if (who && c.humanity) feel(who, c.humanity);
+  if (c.crewHumanity) for (const m of alive(s)) feel(m, c.crewHumanity);
+  if (who && c.heal && who.status === 'wounded') who.status = 'ok';
+  if (who && c.grenade) who.extra[c.grenade] = Math.min(3, who.extra[c.grenade] + 1);
+  let name = who?.name ?? '';
+  if (c.hire) {
+    const cheapest = [...RECRUITABLE].sort((a, b) => hireCost(a) - hireCost(b))[0];
+    name = pickHandle(s.nextCrewId * 37, s.crew.map((m) => m.name));
+    s.crew.push(makeCrew(s.nextCrewId++, cheapest, name, 0));
+  }
+  let outcome = '';
+  if (c.bet) {
+    const r = new Rand(s.rng);
+    const won = r.d(6) + r.d(6) >= c.bet.need;
+    s.rng = r.state;
+    if (won) s.cash += c.bet.win;
+    outcome = won ? '.win' : '.lose';
+  }
+  if (log) s.transcript.push({ kind: 'result', text: { k: `street.${e.id}.${c.id}.result${outcome}`, v: { name } } });
 }
 
 /* ---------- Moving through the story ---------- */
@@ -498,20 +655,25 @@ function enterNode(s: CampaignState, id: string): void {
 }
 
 function follow(s: CampaignState, next: string): void {
-  if (next === END) finishArc(s);
+  // A choice that points nowhere ends the story, so it can't leave the crew with no way forward.
+  if (next === END || !nodeOf(s, next)) finishArc(s);
   else enterNode(s, next);
 }
 
 function finishArc(s: CampaignState): void {
   const arc = s.arc;
   if (!arc) return;
-  const ending = arc.endings.find((e) => !e.needFlag || s.flags.includes(e.needFlag)) ?? arc.endings[arc.endings.length - 1];
+  // A story with no ending written still has to end.
+  const ending = arc.endings.find((e) => !e.needFlag || s.flags.includes(e.needFlag)) ?? arc.endings[arc.endings.length - 1]
+    ?? { title: arc.title, text: 'ending.plain.text' };
   s.ending = { title: ending.title, text: ending.text };
   s.chronicle.push({ title: arc.title, ending: ending.title });
   if (arc.source === 'generated' && arc.bible) {
-    const notes = JSON.parse(arc.bible) as { patron: string; stake: string };
-    s.used.patrons.push(notes.patron);
-    s.used.stakes.push(notes.stake);
+    try {
+      const notes = JSON.parse(arc.bible) as { patron?: unknown; stake?: unknown };
+      if (typeof notes.patron === 'string') s.used.patrons.push(notes.patron);
+      if (typeof notes.stake === 'string') s.used.stakes.push(notes.stake);
+    } catch { /* notes that can't be read just aren't remembered */ }
   }
   s.arcsDone += 1;
   s.node = null;
@@ -542,6 +704,7 @@ export type CampaignAction =
   | { a: 'advance'; id: number; pick: AdvancePick }
   | { a: 'rest' }
   | { a: 'choose'; choice: string }
+  | { a: 'street'; choice: string }
   | { a: 'takeGig'; gig: string; squad: number[] }
   | { a: 'closeDebrief' }
   | { a: 'gmSay'; text: string }
@@ -636,6 +799,7 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       break;
     }
     case 'setOwner': {
+      if (s.phase === 'mission') refuse('notNow');
       const m = member(s, act.id);
       if (!Number.isInteger(act.slot) || !s.players[act.slot] || act.slot === s.gmSlot) refuse('badPlayer');
       // Anyone may take a character the host is covering; only the host can move one between friends.
@@ -668,16 +832,22 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       if (!Object.hasOwn(CHROME_COST, act.chrome)) refuse('badChrome');
       if (m.chrome.includes(act.chrome)) {
         m.chrome = m.chrome.filter((c) => c !== act.chrome);
+        m.spareChrome = [...(m.spareChrome ?? []), act.chrome];
         break;
       }
       if (m.chrome.length >= MAX_CHROME) refuse('chromeFull');
+      if (m.spareChrome?.includes(act.chrome)) {
+        m.spareChrome = m.spareChrome.filter((c) => c !== act.chrome);
+        m.chrome.push(act.chrome);
+        break;
+      }
       spend(s, chromeCost(act.chrome));
       m.chrome.push(act.chrome);
       {
         // Each implant costs a piece of who you were, and some never comes back.
         const r = new Rand(s.rng);
-        m.humanity -= r.d(6) + 2;
-        m.humanityMax -= 2;
+        m.humanity = Math.max(0, m.humanity - (r.d(6) + 5));
+        m.humanityMax = Math.max(MIN_HUMANITY_MAX, m.humanityMax - 2);
         s.rng = r.state;
       }
       break;
@@ -740,19 +910,18 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       break;
     }
     case 'advance': {
+      if (s.phase === 'mission') refuse('notNow');
       const m = member(s, act.id);
       mayManage(slot, m);
       if (m.points <= 0 || !advancesFor(m.role).includes(act.pick)) refuse('noAdvance');
+      if (advanceRoom(m, act.pick) <= 0) refuse('maxed');
       if (act.pick === 'hp') {
-        if (m.bonus.hp >= MAX_BONUS * 3) refuse('maxed');
         m.bonus.hp += 3;
       } else if ((STAT_KEYS as string[]).includes(act.pick)) {
         const k = act.pick as keyof Stats;
-        if ((m.bonus.stats[k] ?? 0) >= MAX_BONUS) refuse('maxed');
         m.bonus.stats[k] = (m.bonus.stats[k] ?? 0) + 1;
       } else {
         const k = act.pick as keyof Skills;
-        if ((m.bonus.skills[k] ?? 0) >= MAX_BONUS) refuse('maxed');
         m.bonus.skills[k] = (m.bonus.skills[k] ?? 0) + 1;
       }
       m.points -= 1;
@@ -799,11 +968,19 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
         // A guest only brings their own people; the host decides for anyone else.
         mayManage(slot, m);
       }
+      // Leaving without an answer is an answer too.
+      answerStreet(s, null, false);
       s.mission = { gig, squad };
       s.phase = 'mission';
       s.transcript = [];
       break;
     }
+    case 'street':
+      hubOnly(s);
+      if (isGm) refuse('gmOnly');
+      if (!s.street) refuse('notNow');
+      answerStreet(s, String(act.choice), true);
+      break;
     case 'finishMission':
       if (s.phase !== 'mission') refuse('notNow');
       applyResult(s, act.result);
@@ -900,6 +1077,8 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       s.flags = [];
       s.narration = {};
       s.freeUsed = [];
+      s.lostGigs = [];
+      s.street = null;
       s.ending = null;
       s.threatMod = 0;
       enterNode(s, act.arc.start);

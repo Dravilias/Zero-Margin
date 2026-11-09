@@ -1,4 +1,4 @@
-import { TUTORIAL_STEPS, sameAction, type TutorialSpot, type TutorialStep } from '../engine/tutorial';
+import { PRACTICE_SKILLS, TUTORIAL_STEPS, practiceSkill, practiceTip, sameAction, type TutorialSpot, type TutorialStep } from '../engine/tutorial';
 import type { Action, GameState } from '../engine/types';
 import { LocalSession } from '../net/sessions';
 import { sfx } from './audio';
@@ -22,8 +22,26 @@ export interface CoachHost {
   toast(text: string): void;
 }
 
+/** What the battle screen needs from a lesson. */
+export interface GameCoach {
+  readonly lesson: 'basics' | 'practice';
+  readonly card: HTMLElement;
+  attach(host: CoachHost): void;
+  isFree(): boolean;
+  isInfo(): boolean;
+  playerMayAct(): boolean;
+  allows(action: Action): boolean;
+  spot(): TutorialSpot;
+  pinned(): string | null;
+  nudge(): void;
+  hovered(unitId: string | null): void;
+  sync(state: GameState): void;
+  next(): void;
+}
+
 /** Walks the player through TUTORIAL_STEPS: shows the text, says what to point at, and limits what they can do. */
-export class Coach {
+export class Coach implements GameCoach {
+  readonly lesson = 'basics';
   readonly card: HTMLElement = el('div.coach');
   private index = 0;
   private host: CoachHost | null = null;
@@ -115,5 +133,51 @@ export class Coach {
         : s.kind === 'enemy' ? el('span.coach-watch', {}, t('tutorial.watching')) : el('span'),
     );
     this.card.classList.toggle('is-free', s.kind === 'free');
+  }
+}
+
+/** The second lesson: never blocks anything, only says what the active operator could try next. */
+export class PracticeCoach implements GameCoach {
+  readonly lesson = 'practice';
+  readonly card: HTMLElement = el('div.coach.is-free');
+  private tried = new Set<string>();
+
+  constructor(private state: GameState) {
+    this.render();
+  }
+
+  attach(): void {}
+  isFree(): boolean { return true; }
+  isInfo(): boolean { return false; }
+  playerMayAct(): boolean { return true; }
+  spot(): TutorialSpot { return {}; }
+  pinned(): string | null { return null; }
+  nudge(): void {}
+  hovered(): void {}
+  next(): void {}
+
+  allows(action: Action): boolean {
+    const skill = practiceSkill(action);
+    if (skill) this.tried.add(skill);
+    return true;
+  }
+
+  sync(state: GameState): void {
+    this.state = state;
+    this.render();
+  }
+
+  private render(): void {
+    const tip = practiceTip(this.state, this.tried);
+    this.card.replaceChildren(
+      el('div.coach-body', {},
+        el('div.coach-head', {},
+          el('h3', {}, t(`practice.tip.${tip}.title`)),
+          el('span.coach-count', {}, t('practice.count', { n: this.tried.size, total: PRACTICE_SKILLS.length })),
+        ),
+        el('p', {}, t(`practice.tip.${tip}.text`)),
+      ),
+      el('span'),
+    );
   }
 }

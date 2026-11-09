@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { chooseAction } from '../src/engine/ai';
 import {
-  END, applyCampaign, availableGigs, buildMission, createCampaign, enemyPoints, makeCrew, missionResult, nodeOf, starterCrew,
+  END, MASTERY_BONUS, MAX_CREW, STREET_EVENTS, advanceRoom, applyCampaign, availableGigs, buildMission, createCampaign, enemyPoints, enemyRoster, makeCrew, missionResult, nodeOf, repPay,
+  starterCrew,
   type Arc, type CampaignAction, type CampaignState, type MissionResult, type Txt,
 } from '../src/engine/campaign';
 import { ROLES } from '../src/engine/data';
@@ -262,6 +263,213 @@ describe('between jobs', () => {
     expect(s.node).toBe(gig.id);
     expect(availableGigs(s).find((g) => g.story)!.id).toBe(gig.id);
     expect(availableGigs(s).find((g) => g.story)!.mapSeed).not.toBe(gig.mapSeed);
+  });
+});
+
+describe('rules that close loopholes', () => {
+  it('pays expenses only for the first loss of a story job', () => {
+    let s = newCamp();
+    s = act(s, { a: 'choose', choice: 'take' });
+    const lose = { won: false, members: [{ state: 'ok' as const, kills: 0, dealt: 0 }] };
+    const cash: number[] = [s.cash];
+    for (let i = 0; i < 3; i++) {
+      const gig = availableGigs(s).find((g) => g.story)!;
+      s = act(s, { a: 'takeGig', gig: gig.id, squad: [1] });
+      s = act(s, { a: 'finishMission', result: lose });
+      s = act(s, { a: 'closeDebrief' });
+      cash.push(s.cash);
+    }
+    expect(cash[1]).toBeGreaterThan(cash[0]);
+    expect(cash[2]).toBe(cash[1]);
+    expect(cash[3]).toBe(cash[1]);
+    expect(s.crew.find((m) => m.id === 1)!.xp).toBe(1);
+  });
+
+  it('puts a removed implant back for free', () => {
+    let s = { ...newCamp({ mode: 'endless', arc: null }), cash: 99999 };
+    s = act(s, { a: 'chrome', id: 1, chrome: 'dermal' });
+    const { cash } = s;
+    const { humanity, humanityMax } = s.crew[0];
+    s = act(s, { a: 'chrome', id: 1, chrome: 'dermal' });
+    expect(s.crew[0].chrome).toEqual([]);
+    expect(s.crew[0].spareChrome).toEqual(['dermal']);
+    s = act(s, { a: 'chrome', id: 1, chrome: 'dermal' });
+    expect(s.crew[0].chrome).toEqual(['dermal']);
+    expect(s.crew[0].spareChrome).toEqual([]);
+    expect(s.cash).toBe(cash);
+    expect(s.crew[0]).toMatchObject({ humanity, humanityMax });
+  });
+
+  it('never lets chrome push humanity below zero', () => {
+    let s = { ...newCamp({ mode: 'endless', arc: null }), cash: 99999 };
+    for (const chrome of ['dermal', 'smartlink', 'dashlegs', 'stim'] as const) s = act(s, { a: 'chrome', id: 1, chrome });
+    expect(s.crew[0].humanity).toBeGreaterThanOrEqual(0);
+    expect(s.crew[0].humanityMax).toBeGreaterThanOrEqual(10);
+  });
+
+  it('keeps making a full enemy squad tougher as the points grow', () => {
+    const toughness = (points: number) =>
+      enemyRoster('meridian', points, 6).reduce((n, l) => n + (l.bonus?.hp ?? 0) + (l.bonus?.stats?.aim ?? 0) + (l.bonus?.stats?.quick ?? 0), 0);
+    const full = enemyRoster('meridian', 2000, 6);
+    expect(full.length).toBe(10);
+    expect(toughness(4000)).toBeGreaterThan(toughness(300));
+    // Training stops somewhere, so a huge crew doesn't face an unbeatable one.
+    expect(toughness(100000)).toBe(toughness(50000));
+  });
+
+  it('pays more for a good name and less for a bad one', () => {
+    expect(repPay(0)).toBe(1);
+    expect(repPay(10)).toBeGreaterThan(1);
+    expect(repPay(-10)).toBeLessThan(1);
+    expect(repPay(999)).toBe(repPay(15));
+  });
+
+  it('pays a bonus for a level with nothing left to learn, and refuses a maxed pick', () => {
+    let s = newCamp({ mode: 'endless', arc: null });
+    const m = s.crew[0];
+    const room = advanceRoom(m, 'aim');
+    expect(room).toBeGreaterThan(0);
+    s = { ...s, crew: s.crew.map((c) => (c.id === 1 ? { ...c, points: room + 1 } : c)) };
+    for (let i = 0; i < room; i++) s = act(s, { a: 'advance', id: 1, pick: 'aim' });
+    expect(advanceRoom(s.crew[0], 'aim')).toBe(0);
+    expect(refused(s, { a: 'advance', id: 1, pick: 'aim' })).toBe('maxed');
+    expect(MASTERY_BONUS).toBeGreaterThan(0);
+  });
+});
+
+describe('street events', () => {
+  /** A crew at its base, one lost job in, with this event waiting. */
+  const at = (id: string, who?: number, over: Partial<CampaignState> = {}): CampaignState => {
+    const s = act(newCamp(), { a: 'choose', choice: 'take' });
+    return { ...s, cash: 1000, rep: 0, threatMod: 0, ...over, street: who === undefined ? { id } : { id, who } };
+  };
+  const loseOne = (s: CampaignState): CampaignState => {
+    const gig = availableGigs(s).find((g) => g.story)!;
+    const next = act(s, { a: 'takeGig', gig: gig.id, squad: [s.crew.find((m) => m.status === 'ok')!.id] });
+    return act(act(next, { a: 'finishMission', result: { won: false, members: [{ state: 'ok', kills: 0, dealt: 0 }] } }), { a: 'closeDebrief' });
+  };
+
+  it('has every text in both languages', () => {
+    for (const lang of ['en', 'pl'] as const) {
+      const d = DICTIONARIES[lang];
+      for (const e of STREET_EVENTS) {
+        const keys = [`street.${e.id}.title`, `street.${e.id}.text`];
+        for (const c of e.choices) {
+          keys.push(`street.${e.id}.${c.id}`);
+          if (c.bet) keys.push(`street.${e.id}.${c.id}.result.win`, `street.${e.id}.${c.id}.result.lose`);
+          else keys.push(`street.${e.id}.${c.id}.result`);
+        }
+        for (const k of keys) expect(d[k], `${lang} ${k}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('never moves money when ignored', () => {
+    for (const e of STREET_EVENTS) expect(e.choices[1].cash, e.id).toBeUndefined();
+  });
+
+  it('comes up about half the time, never twice in a row, and only where it fits', () => {
+    const seen = (rep: number) => {
+      const ids: string[] = [];
+      let jobs = 0;
+      for (let seed = 1; seed <= 12; seed++) {
+        let s = act(newCamp({ seed, crew: starterCrew(seed) }), { a: 'choose', choice: 'take' });
+        let last = '';
+        for (let i = 0; i < 10; i++) {
+          s = loseOne({ ...s, rep, cash: 1000 });
+          jobs++;
+          if (!s.street) continue;
+          expect(s.street.id).not.toBe(last);
+          last = s.street.id;
+          ids.push(s.street.id);
+        }
+      }
+      return { ids, jobs };
+    };
+    const known = seen(6);
+    expect(known.ids.length).toBeGreaterThan(known.jobs * 0.3);
+    expect(known.ids.length).toBeLessThan(known.jobs * 0.7);
+    expect(known.ids).toContain('fixer');
+    expect(known.ids).not.toContain('grudge');
+    // Nobody is dead, wounded or losing themselves to chrome in these crews.
+    for (const id of ['wake', 'doc', 'drift']) expect(known.ids).not.toContain(id);
+    const hated = seen(-6);
+    expect(hated.ids).toContain('grudge');
+    expect(hated.ids).not.toContain('fixer');
+  });
+
+  it('applies what each answer says', () => {
+    let s = act(at('debt'), { a: 'street', choice: 'pay' });
+    expect([s.cash, s.rep, s.street]).toEqual([800, 1, null]);
+    expect(s.transcript.at(-1)).toMatchObject({ kind: 'result', text: { k: 'street.debt.pay.result' } });
+    expect(act(at('debt'), { a: 'street', choice: 'stall' }).threatMod).toBe(1);
+    s = act(at('tip'), { a: 'street', choice: 'buy' });
+    expect([s.cash, s.threatMod]).toEqual([850, -1]);
+    s = act(at('salvage', 1), { a: 'street', choice: 'keep' });
+    expect(s.crew.find((m) => m.id === 1)!.extra.frag).toBe(at('salvage', 1).crew.find((m) => m.id === 1)!.extra.frag + 1);
+    expect(act(at('neighbors'), { a: 'street', choice: 'refuse' }).rep).toBe(-1);
+    s = act(at('fixer', undefined, { rep: 3 }), { a: 'street', choice: 'favor' });
+    expect([s.rep, s.threatMod]).toEqual([4, -1]);
+  });
+
+  it('looks after the person it is about', () => {
+    const hurt = at('doc', 2);
+    hurt.crew = hurt.crew.map((m) => (m.id === 2 ? { ...m, status: 'wounded' as const } : m));
+    const healed = act(hurt, { a: 'street', choice: 'pay' });
+    expect(healed.crew.find((m) => m.id === 2)!.status).toBe('ok');
+    expect(healed.cash).toBe(900);
+    expect(act(hurt, { a: 'street', choice: 'no' }).crew.find((m) => m.id === 2)!.status).toBe('wounded');
+
+    const lost = at('drift', 1);
+    lost.crew = lost.crew.map((m) => (m.id === 1 ? { ...m, humanity: 5 } : m));
+    expect(act(lost, { a: 'street', choice: 'night' }).crew.find((m) => m.id === 1)!.humanity).toBe(13);
+    expect(act(lost, { a: 'street', choice: 'leave' }).crew.find((m) => m.id === 1)!.humanity).toBe(2);
+
+    const wake = at('wake');
+    wake.crew = wake.crew.map((m) => ({ ...m, humanity: m.id === 1 ? m.humanityMax : 3 }));
+    const after = act(wake, { a: 'street', choice: 'hold' });
+    expect(after.crew.find((m) => m.id === 1)!.humanity).toBe(after.crew.find((m) => m.id === 1)!.humanityMax);
+    expect(after.crew.find((m) => m.id === 2)!.humanity).toBe(7);
+  });
+
+  it('takes in a kid for free while there is room', () => {
+    const s = at('kid');
+    const more = act(s, { a: 'street', choice: 'take' });
+    expect(more.crew.length).toBe(s.crew.length + 1);
+    expect(more.cash).toBe(s.cash);
+    expect(new Set(more.crew.map((m) => m.name)).size).toBe(more.crew.length);
+    const full = at('kid');
+    while (full.crew.length < MAX_CREW) full.crew.push(makeCrew(full.nextCrewId++, full.crew[0].role, `Extra ${full.crew.length}`, 0));
+    expect(refused(full, { a: 'street', choice: 'take' })).toBe('noCash');
+    expect(act(full, { a: 'street', choice: 'send' }).crew.length).toBe(MAX_CREW);
+  });
+
+  it('pays out a bet on 8 or more and keeps the stake otherwise', () => {
+    const cash = new Set<number>();
+    for (let i = 1; i <= 40; i++) {
+      const s = act(at('dice', undefined, { rng: i * 7919 }), { a: 'street', choice: 'bet' });
+      cash.add(s.cash);
+      expect(s.transcript.at(-1)).toMatchObject({ text: { k: s.cash === 1400 ? 'street.dice.bet.result.win' : 'street.dice.bet.result.lose' } });
+    }
+    expect([...cash].sort()).toEqual([1400, 800]);
+  });
+
+  it('refuses what the crew cannot pay for, a wrong answer, the game master, and an answer to nothing', () => {
+    expect(refused(at('debt', undefined, { cash: 150 }), { a: 'street', choice: 'pay' })).toBe('noCash');
+    expect(refused(at('debt'), { a: 'street', choice: 'nope' })).toBe('badChoice');
+    expect(refused({ ...at('debt'), street: null }, { a: 'street', choice: 'pay' })).toBe('notNow');
+    let s = act(newCamp({ online: true }), { a: 'choose', choice: 'take' });
+    s = act(s, { a: 'setPlayers', players: [...s.players, { name: 'Friend', peer: 'p1', connected: true }] });
+    s = act(s, { a: 'setGm', slot: 1 });
+    expect(refused({ ...s, street: { id: 'debt' } }, { a: 'street', choice: 'pay' }, 1)).toBe('gmOnly');
+  });
+
+  it('counts leaving for a job as the second answer', () => {
+    const s = at('debt');
+    const gig = availableGigs(s).find((g) => g.story)!;
+    const gone = act(s, { a: 'takeGig', gig: gig.id, squad: [1] });
+    expect([gone.street, gone.threatMod, gone.cash]).toEqual([null, 1, 1000]);
+    expect(gone.transcript.length).toBe(s.transcript.length);
   });
 });
 

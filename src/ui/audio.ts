@@ -86,4 +86,5 @@ export const sfx = {
   turn: () => tone({ dur: 0.18, gain: 0.1, from: 330, to: 440, type: 'triangle' }),
   down: () => tone({ dur: 0.45, gain: 0.25, from: 180, to: 40, type: 'sawtooth' }),
   win: () => [392, 494, 587, 784].forEach((f, i) => tone({ at: i * 0.13, dur: 0.3, gain: 0.14, from: f, type: 'triangle' })),
+  lose: () => [392, 330, 262].forEach((f, i) => tone({ at: i * 0.2, dur: 0.4, gain: 0.12, from: f, to: f * 0.94, type: 'triangle' })),
 };

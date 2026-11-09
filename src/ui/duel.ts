@@ -1,4 +1,4 @@
-import { CARDS, MAX_IN_LANE, NO_LANE, crackedCount, type CardId, type DuelSide } from '../engine/duel';
+import { CARDS, MAX_IN_LANE, NO_LANE, crackedCount, duelTip, type CardId, type DuelSide } from '../engine/duel';
 import type { RulesetId } from '../engine/types';
 import { DuelGuest, DuelHost, DuelLocal, type DuelController } from '../net/duelNet';
 import { RelayClient } from '../net/relayClient';
@@ -20,6 +20,10 @@ export interface DuelScreens {
 let ui: DuelScreens;
 export function initDuelScreens(s: DuelScreens): void {
   ui = s;
+}
+
+function lessonCard(tip: string): HTMLElement {
+  return el('div.camp-tip.duel-tip', {}, el('div', {}, el('h3', {}, t(`duel.tip.${tip}.title`)), el('p', {}, t(`duel.tip.${tip}.text`))));
 }
 
 export function duelSetup(): void {
@@ -81,7 +85,12 @@ function laneFull(id: CardId, lane: { hacker: unknown[]; corp: unknown[] }, side
   return (PLACED.has(CARDS[id].kind) || id === 'reroute') && lane[side].length >= MAX_IN_LANE;
 }
 
-function run(ctl: DuelController): void {
+/** The lesson: a Quick Job duel as the hacker against the computer, with a hint above the board. */
+export function duelLesson(): void {
+  run(new DuelLocal(randomSeed(), 'quick', 'hacker'), true);
+}
+
+function run(ctl: DuelController, lesson = false): void {
   let chosen: number | null = null;
   let targeted: { lane: number; index: number } | null = null;
   let passed: DuelSide | null = null;
@@ -160,6 +169,7 @@ function run(ctl: DuelController): void {
         ),
         ctl.code ? el('button.code-chip', { onclick: () => copyText(ctl.code!) }, ctl.code) : null,
       ),
+      lesson ? lessonCard(duelTip(s, chosenId ?? null)) : null,
       el('div.duel-board', {}, s.lanes.map((l, i) => el('section.duel-lane', {
         class: l.node <= 0 ? 'is-cracked' : chosenId && mine ? 'can' : '',
       },
@@ -182,7 +192,8 @@ function run(ctl: DuelController): void {
           s.winner ? el('div', {},
             el('h2', {}, t(`duel.win.${s.winner}`)),
             el('p', {}, t(`duel.reason.${s.reason}`)),
-            el('button.btn-primary', { onclick: leave }, t('over.menu')),
+            lesson ? el('button.btn-primary', { onclick: () => { ctl.dispose(); duelLesson(); } }, t('duel.lesson.again')) : null,
+            el(lesson ? 'button.btn-quiet' : 'button.btn-primary', { onclick: leave }, t('over.menu')),
           ) : mine
             ? el('button.btn-primary', { onclick: () => { chosen = null; ctl.act({ a: 'end' }, viewer); } }, t(viewer === 'hacker' ? 'duel.endRun' : 'duel.endTurn'))
             : el('p.muted', {}, t('duel.theirTurn')),

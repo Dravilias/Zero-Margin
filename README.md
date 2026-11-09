@@ -21,7 +21,7 @@ Builds are on the [Releases page](https://github.com/Dravilias/Zero-Margin/relea
 
 On Windows, installing a newer version over an older one keeps saves and settings. So does uninstalling, from Installed apps in Windows Settings.
 
-The built-in tutorial in the main menu takes about 5 minutes and covers the basics of skirmish.
+The tutorial in the main menu has three lessons: a 5-minute walk through the basics of skirmish, a practice fight under Standard Contract rules with hints for overwatch, burst fire, grenades, charging, hacking and patching up, and a card duel with a hint for every decision. A first-time player goes straight into the basics. The campaign explains itself with short tips the first time each screen comes up, and its Guide button shows them all again.
 
 ## Install from source
 
@@ -46,7 +46,7 @@ The script builds the game if needed, then adds it to the app menu and as a `zer
 
 **Without installing**
 
-`npm install` followed by `npm start` runs the desktop app directly. `npm run dev` serves the game to a browser at <http://localhost:5199>, but the language-model game master only works in the desktop app.
+`npm ci` followed by `npm start` runs the desktop app directly. `npm run dev` serves the game to a browser at <http://localhost:5199>, but the language-model game master only works in the desktop app.
 
 ## Updates
 
@@ -83,6 +83,8 @@ There are three sources of story:
 | **New contract** | A four-chapter story assembled from written pieces, different every time |
 | **The Note** | A hand-written five-chapter story with three endings |
 | **Written by a language model** | A new story from a connected model |
+
+Between jobs, about every other return to the base brings a street event with two answers: a debt, a tip for sale, a dice game, a kid who wants in. Some only come up for a crew with a good or bad reputation, or for someone wounded or losing humanity to chrome.
 
 When a story ends, the same crew can take on another one or move to the endless job board. Another player can also take the game master's seat to run the enemy, call in reinforcements, narrate and trigger events between jobs.
 
@@ -123,7 +125,7 @@ Settings also accept 1 or 3 **fallback servers**, each with its own endpoint, ke
 
 Rules, dice, money and combat always stay in the game engine. Model output is checked before use, and the game falls back to its written text if every server fails.
 
-The desktop app stores the key encrypted, never passes it to the game's page, and forgets it if that server's endpoint changes. On a system without secure key storage, the key is kept only until the game closes. Plain `http://` addresses are only accepted on the same PC or local network.
+The desktop app stores the key encrypted, never hands it back to the game's page once it's saved, and forgets it if that server's endpoint changes. On a system without secure key storage, the key is kept only until the game closes. Plain `http://` addresses are only accepted on the same PC or local network, including private IPv6 addresses.
 
 Scene text and crew names are sent to the chosen servers, so each provider's terms and prices apply. A model running on the same PC keeps them there.
 
@@ -138,7 +140,9 @@ cd relay
 docker compose up -d --build
 ```
 
-It listens on `127.0.0.1:7700`, so reaching it from outside takes a reverse proxy or tunnel, with `wss://` for secure connections.
+It listens on `127.0.0.1:7700`, so reaching it from outside takes a reverse proxy or tunnel, with `wss://` for secure connections. `npm run relay` starts the same server without Docker, also on `127.0.0.1` unless `HOST` is set.
+
+The relay limits rooms and connections per address. Behind a proxy it only sees the proxy's address, so `PROXY_HEADER` names the header the proxy sets to the player's address. The compose file sets it to `cf-connecting-ip` for a Cloudflare tunnel. The proxy must overwrite that header, not pass along what the client sent.
 
 ## Development
 
@@ -177,12 +181,12 @@ Setting `ZM_UPDATE_FEED` to a URL of a file shaped like GitHub's latest-release 
 | `src/ui/` | Screens, board and dice rendering, synthesized sound and translations |
 | `electron/` | The desktop app, including model server calls, key storage and updates |
 | `relay/` | The join-code relay, a small Node server packaged for Docker |
-| `tests/` | Rules, computer players, online play, translations and the tutorial |
+| `tests/` | Rules, computer players, online play, translations and the lessons |
 | `scripts/` | Balance simulator, tutorial seed finder, icon generator and a test client |
 
 Game state is plain JSON, with its random number generator stored inside it, so saves and online play use the same state. All player-facing text lives in the translation files, and a test checks that English and Polish have matching keys and placeholders.
 
-`tests/tutorial.test.ts` checks every number the tutorial quotes. If a rules change breaks it, `scripts/find-tutorial-seed.ts` finds a new seed.
+`tests/tutorial.test.ts` checks every number the basics lesson quotes. If a rules change breaks it, `scripts/find-tutorial-seed.ts` finds a new seed. The other two lessons work out their hints from the state of the game, so they need no seed; `tests/lessons.test.ts` covers them.
 
 ### Testing a packaged build
 
@@ -194,11 +198,11 @@ Setting `ZM_SMOKE_TEST=1` makes the desktop app run a check using a throwaway pr
 ## Known limitations
 
 - **Balance:** faction win rates vary widely by scenario and rule depth, and campaign prices and difficulty are estimates.
-- **Language models:** the integration has only been tested against simulated responses, not a real server.
+- **Language models:** one real server has been tried, on the first chapter of a story in English. Later chapters, endings, Polish output and narration in online games have only been tested against simulated responses.
 - **Windows:** the build has only been tested in a virtual machine, not on physical hardware.
 - **Online play:** the game hasn't been tested with players on separate home networks.
 - **Card duel:** online players receive the full game state, so a modified client could see the opponent's hand.
-- **Tutorial:** it only teaches the basics of skirmish, not the campaign or the card duel.
+- **Tutorial:** the lessons cover Quick Job and Standard Contract skirmish and a Quick Job card duel as the hacker. Full Contract rules, scenario objectives and the corporation's side of the duel have no lesson, and the campaign has tips and a guide instead of a played one.
 
 ## License
 

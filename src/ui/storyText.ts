@@ -190,6 +190,7 @@ export const storyEn: Record<string, string> = {
   'gig.lost.0': 'You pull out with what you can carry. The client pays a fifth of the fee and stops returning calls.',
   'gig.lost.1': 'It went wrong early and never recovered. You get hazard pay, and a reputation you’d rather not have.',
   'gig.lost.2': 'Nobody’s calling that a success. At least most of you are breathing.',
+  'ending.plain.text': 'The job is done and the crew is still standing. In Port Sable that counts as a good ending.',
   'ending.wiped.title': 'Nobody Left',
   'ending.wiped.text': 'The crew is gone and the account is empty. Somebody else rents the berth by the end of the month, and in a year there’s nobody on the piers who can tell you the names.',
 };
@@ -384,6 +385,7 @@ export const storyPl: Record<string, string> = {
   'gig.lost.0': 'Wycofujecie się z tym, co da się unieść. Klient płaci jedną piątą i przestaje odbierać telefony.',
   'gig.lost.1': 'Poszło źle od początku i już się nie odkręciło. Dostajecie dodatek za ryzyko i opinię, której wolelibyście nie mieć.',
   'gig.lost.2': 'Nikt tego nie nazwie sukcesem. Przynajmniej większość z was oddycha.',
+  'ending.plain.text': 'Robota skończona, a ekipa wciąż stoi na nogach. W Port Sable to się liczy jako dobre zakończenie.',
   'ending.wiped.title': 'Nikt nie został',
   'ending.wiped.text': 'Ekipy nie ma, konto jest puste. Pod koniec miesiąca nabrzeże wynajmuje ktoś inny, a za rok na molach nikt już nie wymieni waszych nazwisk.',
 };

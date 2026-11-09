@@ -1,5 +1,5 @@
 import { makeLoadout } from './data';
-import { createGame, unitById } from './game';
+import { createGame, unitById, unitOptions } from './game';
 import type { Action, GameConfig, GameState, MapData } from './types';
 
 /*
@@ -199,4 +199,77 @@ export function sameAction(a: Action, b: Action): boolean {
   const y = b as Record<string, unknown>;
   for (const k of ['unitId', 'targetId', 'x', 'y']) if (x[k] !== y[k]) return false;
   return true;
+}
+
+/*
+ * The second lesson: a whole fight under Standard Contract rules, with a hint for whatever the
+ * active operator can do that the player hasn't tried yet. Nothing here is scripted, so it needs
+ * no dice seed: the hint is worked out from the state of the game.
+ */
+
+export const PRACTICE_SKILLS = ['overwatch', 'burst', 'grenade', 'charge', 'hack', 'patch'] as const;
+export type PracticeSkill = typeof PRACTICE_SKILLS[number];
+export type PracticeTip = PracticeSkill | 'deploy' | 'wait' | 'pick' | 'reload' | 'melee' | 'act' | 'over';
+
+export function createPracticeGame(seed = 31): GameState {
+  return createGame({
+    seed,
+    scenario: 'flatline',
+    ruleset: 'standard',
+    mapSize: 'small',
+    theme: 'docks',
+    maxRounds: 12,
+    points: 100,
+    sides: [
+      {
+        name: '', faction: 'union', team: 0, control: 'human', aiLevel: 'easy',
+        roster: [
+          { ...makeLoadout('breaker', 'rifle', 'hammer'), name: 'Rivet' },
+          { ...makeLoadout('sapper', 'shotgun', 'shiv', [], { frag: 3, smoke: 1 }), name: 'Fuse' },
+          { ...makeLoadout('razor', 'pistol', 'monoblade'), name: 'Anchor' },
+          { ...makeLoadout('wire', 'smg', 'shiv'), name: 'Static' },
+          { ...makeLoadout('patcher', 'pistol', 'shiv'), name: 'Gauze' },
+        ],
+      },
+      {
+        name: '', faction: 'meridian', team: 1, control: 'ai', aiLevel: 'easy',
+        roster: [
+          { ...makeLoadout('punk', 'pistol', 'shiv'), name: 'Soot' },
+          { ...makeLoadout('punk', 'pistol', 'shiv'), name: 'Clinker' },
+          { ...makeLoadout('punk', 'smg', 'shiv'), name: 'Slag' },
+          { ...makeLoadout('punk', 'pistol', 'hammer'), name: 'Cinder' },
+        ],
+      },
+    ],
+  });
+}
+
+/** Which of the practised skills an action counts as, if any. */
+export function practiceSkill(a: Action): PracticeSkill | null {
+  switch (a.type) {
+    case 'overwatch': case 'charge': case 'hack': case 'patch': return a.type;
+    case 'grenade': return 'grenade';
+    case 'shoot': return a.mode === 'burst' ? 'burst' : null;
+    default: return null;
+  }
+}
+
+/** The hint to show right now: the first thing the active operator can do that hasn't been tried. */
+export function practiceTip(s: GameState, tried: ReadonlySet<string>): PracticeTip {
+  if (s.phase === 'over') return 'over';
+  if (s.phase === 'deploy') return s.ready[0] ? 'wait' : 'deploy';
+  if (s.activeSide !== 0) return 'wait';
+  const u = s.activeUnit ? unitById(s, s.activeUnit) : null;
+  if (!u) return 'pick';
+  const o = unitOptions(s, u);
+  const fresh = (k: PracticeSkill) => !tried.has(k);
+  if (o.reload && u.ammo === 0) return 'reload';
+  if (o.patch && fresh('patch')) return 'patch';
+  if (o.charge && fresh('charge')) return 'charge';
+  if (o.grenades.includes('frag') && o.shoot && fresh('grenade')) return 'grenade';
+  if (o.programs.some((p) => p !== 'terminal') && fresh('hack')) return 'hack';
+  if (o.burst && o.shoot && fresh('burst')) return 'burst';
+  if (o.overwatch && !o.shoot && !o.melee && fresh('overwatch')) return 'overwatch';
+  if (o.melee) return 'melee';
+  return 'act';
 }

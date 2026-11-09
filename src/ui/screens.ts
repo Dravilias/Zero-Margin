@@ -3,7 +3,7 @@ import {
 } from '../engine/data';
 import { generateMap } from '../engine/map';
 import { NEON, glyph } from './boardArt';
-import { createTutorialGame } from '../engine/tutorial';
+import { createPracticeGame, createTutorialGame } from '../engine/tutorial';
 import type { ChromeId, FactionId, GrenadeKind, Loadout, RoleId, WeaponId } from '../engine/types';
 import { RelayClient, RelayError } from '../net/relayClient';
 import {
@@ -17,13 +17,13 @@ import { sfx } from './audio';
 import { playMusic, setMusicVolume } from './music';
 import { campaignHome, initCampaignScreens, joinCampaign } from './campaign';
 import { clear, copyText, el, loadingPage, selectEl } from './dom';
-import { duelSetup, initDuelScreens, joinDuel } from './duel';
+import { duelLesson, duelSetup, initDuelScreens, joinDuel } from './duel';
 import { GameView } from './game';
 import { getLang, t, type Lang } from './i18n';
 import { roleIcon } from './icons';
 import { llmStatus, type LlmServerInput } from './llm';
 import { DEFAULT_RELAY, saveSettings, settings } from './settings';
-import { Coach, TutorialSession } from './tutorial';
+import { Coach, PracticeCoach, TutorialSession } from './tutorial';
 
 let root: HTMLElement;
 let currentView: GameView | null = null;
@@ -343,7 +343,7 @@ export function menuScreen(): void {
       el('div', {}, el('h1.logo', {}, 'ZERO MARGIN'), el('p.tagline', {}, t('app.tagline'))),
       el('nav.menu-list', {},
         save ? item(t('menu.continue'), t('menu.continue.sub', { round: Math.max(1, save.state.round) }), () => continueSave(), true) : null,
-        item(t('menu.tutorial'), settings.tutorialDone ? null : t('menu.tutorial.sub'), () => tutorialScreen(), !settings.tutorialDone && !save),
+        item(t('menu.tutorial'), settings.tutorialDone ? null : t('menu.tutorial.sub'), () => (settings.tutorialDone ? lessonsScreen() : tutorialScreen()), !settings.tutorialDone && !save),
         item(t('menu.skirmish'), null, () => tableScreen(new LocalTable(newTable(myName(), false))), settings.tutorialDone && !save),
         item(t('menu.host'), null, () => hostScreen()),
         item(t('menu.join'), null, () => joinScreen()),
@@ -372,6 +372,34 @@ export function menuScreen(): void {
     art.height = 0;
   };
   runMenuRain(rain);
+}
+
+/** The three lessons. A first-time player skips this page and goes straight to the basics. */
+function lessonsScreen(): void {
+  const lesson = (id: string, go: () => void) => el('button.pick-card', { onclick: () => { sfx.click(); go(); } },
+    el('span.pick-title', {}, t(`lessons.${id}`)), el('span.pick-desc', {}, t(`lessons.${id}.d`)));
+  screen(el('div.center-page.scroll', {}, el('div.card.wide', {},
+    backButton(menuScreen),
+    el('h2', {}, t('menu.tutorial')),
+    el('p.muted', {}, t('lessons.intro')),
+    el('div.pick-row.lessons', {},
+      lesson('basics', tutorialScreen),
+      lesson('practice', practiceScreen),
+      lesson('duel', duelLesson),
+    ),
+  )));
+}
+
+function practiceScreen(): void {
+  const state = createPracticeGame(randomSeed());
+  const session = new TutorialSession(state, [0]);
+  session.free = true;
+  screen();
+  currentView = new GameView(root, session, {
+    toMenu: menuScreen,
+    retry: practiceScreen,
+    rematch: () => tableScreen(new LocalTable(newTable(myName(), false))),
+  }, new PracticeCoach(state));
 }
 
 function tutorialScreen(): void {
@@ -873,7 +901,7 @@ function rulesScreen(): void {
   screen(el('div.center-page.scroll', {}, el('div.card.wide', {},
     backButton(menuScreen),
     el('h2', {}, t('rules.title')),
-    el('button.btn-primary.rules-tutorial', { onclick: () => tutorialScreen() }, t('menu.tutorial')),
+    el('button.btn-primary.rules-tutorial', { onclick: () => lessonsScreen() }, t('menu.tutorial')),
     blocks.map((b) => el('section.rule-block', {}, el('h3', {}, t(`rules.${b}.h`)), el('p', {}, t(`rules.${b}`)))),
   )));
 }

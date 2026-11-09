@@ -14,7 +14,7 @@ import { clear, copyText, el } from './dom';
 import { t } from './i18n';
 import { actionIcon, crewIcon, roleIcon } from './icons';
 import { speedFactor } from './settings';
-import type { Coach } from './tutorial';
+import type { GameCoach } from './tutorial';
 
 type Mode =
   | { k: 'default' }
@@ -64,7 +64,7 @@ export class GameView {
   private overShown = false;
   private keyHandler: (e: KeyboardEvent) => void;
 
-  constructor(private root: HTMLElement, private session: GameSession, private nav: GameNav, private coach?: Coach) {
+  constructor(private root: HTMLElement, private session: GameSession, private nav: GameNav, private coach?: GameCoach) {
     this.display = structuredClone(session.state);
     playMusic('battle');
     this.build();
@@ -1063,9 +1063,10 @@ export class GameView {
     const btn = (icon: string, label: string, enabled: boolean, onclick: () => void, opts: { title?: string; on?: boolean; color?: string; act?: string } = {}) => {
       const k = key++;
       return el('button.act', {
-        disabled: !enabled, title: opts.title ?? label, 'data-key': k, 'data-act': opts.act, class: opts.on ? 'on' : '',
+        // Only 1 to 9 exist as keys, so later buttons show no number they couldn't honour.
+        disabled: !enabled, title: opts.title ?? label, 'data-key': k <= 9 ? k : undefined, 'data-act': opts.act, class: opts.on ? 'on' : '',
         style: opts.color ? { '--c': opts.color } : undefined, onclick,
-      }, el('span.key', {}, k), actionIcon(icon), el('span.act-label', {}, label));
+      }, k <= 9 ? el('span.key', {}, k) : null, actionIcon(icon), el('span.act-label', {}, label));
     };
     const setMode = (m: Mode) => {
       sfx.click();
@@ -1261,6 +1262,8 @@ export class GameView {
 
   private showTutorialEnd(): void {
     const won = this.display.winner === 0;
+    const practice = this.coach?.lesson === 'practice';
+    const key = practice ? 'practice' : 'tutorial';
     if (won) {
       sfx.win();
       this.nav.tutorialDone?.();
@@ -1272,12 +1275,12 @@ export class GameView {
       then();
     };
     const m = this.modal(el('div.over', {},
-      el('h2', {}, t(won ? 'tutorial.win.title' : 'tutorial.lose.title')),
-      el('p', {}, t(won ? 'tutorial.win.text' : 'tutorial.lose.text')),
-      won ? el('p', {}, t('tutorial.win.depth')) : null,
+      el('h2', {}, t(`${key}.${won ? 'win' : 'lose'}.title`)),
+      el('p', {}, t(`${key}.${won ? 'win' : 'lose'}.text`)),
+      won ? el('p', {}, t(`${key}.win.depth`)) : null,
       el('div.modal-actions', {},
         won
-          ? el('button.btn-primary', { onclick: leave(this.nav.rematch ?? this.nav.toMenu) }, t('tutorial.firstGame'))
+          ? el('button.btn-primary', { onclick: leave(this.nav.rematch ?? this.nav.toMenu) }, t(practice ? 'practice.next' : 'tutorial.firstGame'))
           : el('button.btn-primary', { onclick: leave(this.nav.retry ?? this.nav.toMenu) }, t('tutorial.retry')),
         el('button.btn-quiet', { onclick: leave(this.nav.toMenu) }, t('over.menu')),
       ),
@@ -1311,7 +1314,10 @@ export class GameView {
       return;
     }
     const s = this.display;
-    sfx.win();
+    // The fanfare is for whoever is sitting here. Losing to the computer or to a friend online gets the other sound.
+    const here = s.cfg.sides.flatMap((c, i) => (this.session.localSides.has(i) && c.control === 'human' ? [c.team] : []));
+    if (s.winner !== null && s.winner !== -1 && (!here.length || here.includes(s.winner))) sfx.win();
+    else sfx.lose();
     let title: string;
     if (s.winner === -1 || s.winner === null) title = t('over.draw');
     else {

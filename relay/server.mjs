@@ -10,6 +10,13 @@ const PROTOCOL = 1;
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 6;
 
+/** Loopback and private-network addresses: where a reverse proxy or tunnel in front of the relay connects from. */
+export function isPrivate(address) {
+  const a = String(address).toLowerCase().replace(/^::ffff:/, '');
+  if (a === '::1' || a.startsWith('fc') || a.startsWith('fd') || a.startsWith('fe80:')) return true;
+  return /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a);
+}
+
 export function startRelay(options = {}) {
   const port = options.port ?? 7700;
   const maxRooms = options.maxRooms ?? 500;
@@ -19,13 +26,23 @@ export function startRelay(options = {}) {
   const peerGraceMs = options.peerGraceMs ?? 30 * 60 * 1000;
   const idleMs = options.idleMs ?? 3 * 60 * 60 * 1000;
   const heartbeatMs = options.heartbeatMs ?? 25 * 1000;
-  const trustProxy = options.trustProxy ?? false;
+  // The one header a proxy in front of the relay sets to the player's address, e.g. "cf-connecting-ip". Off by default.
+  const proxyHeader = options.proxyHeader ? String(options.proxyHeader).toLowerCase() : null;
   const limits = { creates: options.createsPerMinute ?? 20, joins: options.joinsPerMinute ?? 40 };
+  const maxRoomsPerIp = options.maxRoomsPerIp ?? 6;
+  const maxSocketsPerIp = options.maxSocketsPerIp ?? 16;
+  const maxSockets = options.maxSockets ?? 1500;
+  // Behind a proxy that names no header, every player shares the proxy's private address, so the per-address caps would cap the whole relay.
+  const capped = (ip) => options.limitPrivate || !isPrivate(ip);
+  // A player who stops reading would otherwise have everything meant for them pile up in memory here.
+  const maxBuffered = options.maxBuffered ?? 4 * 1024 * 1024;
 
   /** @type {Map<string, any>} */
   const rooms = new Map();
   /** @type {Map<string, {minute:number, creates:number, joins:number}>} */
   const ipUse = new Map();
+  /** @type {Map<string, number>} */
+  const ipSockets = new Map();
 
   const server = http.createServer((req, res) => {
     if (req.url === '/health') {
@@ -37,11 +54,24 @@ export function startRelay(options = {}) {
     res.end('Zero Margin relay\n');
   });
 
+  server.maxConnections = maxSockets;
   const wss = new WebSocketServer({ server, maxPayload });
 
   const send = (ws, msg) => {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (ws.bufferedAmount > maxBuffered) return ws.terminate();
+    ws.send(JSON.stringify(msg));
   };
+
+  /** The address limits are counted against. A header is only believed when it comes from a proxy on this machine or its private network. */
+  function addressOf(req) {
+    const direct = String(req.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '');
+    if (!proxyHeader || !isPrivate(direct)) return direct;
+    const value = req.headers[proxyHeader];
+    // Proxies add the address they saw at the end of a list; anything before it was sent by the client.
+    const last = String(Array.isArray(value) ? value[value.length - 1] : value ?? '').split(',').pop().trim();
+    return last || direct;
+  }
   const token = () => crypto.randomBytes(18).toString('base64url');
   const cleanName = (v) => String(v ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 24) || 'Player';
 
@@ -84,7 +114,8 @@ export function startRelay(options = {}) {
   const peerList = (room) => [...room.peers.values()].map((p) => ({ id: p.id, name: p.name, connected: !!p.ws }));
 
   function handle(ws, msg) {
-    room_touch(ws);
+    // Keep-alive pings don't count as play, so a room nobody uses still expires.
+    if (msg.op !== 'ping' && ws.room) ws.room.lastSeen = Date.now();
     switch (msg.op) {
       case 'ping':
         send(ws, { op: 'pong', t: msg.t });
@@ -94,9 +125,12 @@ export function startRelay(options = {}) {
         if (ws.room) return send(ws, { op: 'error', code: 'in-room' });
         if (!allow(ws.ip, 'creates')) return send(ws, { op: 'error', code: 'rate' });
         if (rooms.size >= maxRooms) return send(ws, { op: 'error', code: 'server-full' });
+        let mine = 0;
+        for (const r of rooms.values()) if (r.ip === ws.ip) mine += 1;
+        if (mine >= maxRoomsPerIp && capped(ws.ip)) return send(ws, { op: 'error', code: 'rate' });
         const code = newCode();
         if (!code) return send(ws, { op: 'error', code: 'server-full' });
-        const room = { code, hostToken: token(), hostWs: ws, hostName: cleanName(msg.name), peers: new Map(), lastSeen: Date.now(), hostTimer: null, nextPeer: 1 };
+        const room = { code, ip: ws.ip, hostToken: token(), hostWs: ws, hostName: cleanName(msg.name), peers: new Map(), lastSeen: Date.now(), hostTimer: null, nextPeer: 1 };
         rooms.set(code, room);
         ws.room = room;
         ws.role = 'host';
@@ -105,6 +139,8 @@ export function startRelay(options = {}) {
       case 'resume': {
         const room = rooms.get(String(msg.code ?? '').toUpperCase());
         if (!room || room.hostToken !== msg.hostToken) return send(ws, { op: 'error', code: 'no-room' });
+        // One connection sits in one room, or the room it left would never hear that its host had gone.
+        if (ws.room && ws.room !== room) return send(ws, { op: 'error', code: 'in-room' });
         if (room.hostWs && room.hostWs !== ws) room.hostWs.close();
         clearTimeout(room.hostTimer);
         room.hostWs = ws;
@@ -186,11 +222,10 @@ export function startRelay(options = {}) {
     }
   }
 
-  function room_touch(ws) {
-    if (ws.room) ws.room.lastSeen = Date.now();
-  }
-
   function onClose(ws) {
+    const open = (ipSockets.get(ws.ip) ?? 1) - 1;
+    if (open > 0) ipSockets.set(ws.ip, open);
+    else ipSockets.delete(ws.ip);
     const room = ws.room;
     if (!room) return;
     if (ws.role === 'host' && room.hostWs === ws) {
@@ -209,10 +244,17 @@ export function startRelay(options = {}) {
   }
 
   wss.on('connection', (ws, req) => {
-    const forwarded = trustProxy ? req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] : null;
-    ws.ip = String(forwarded || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+    ws.ip = addressOf(req);
     ws.alive = true;
     ws.room = null;
+    ws.on('close', () => onClose(ws));
+    ws.on('error', () => ws.terminate());
+    const open = (ipSockets.get(ws.ip) ?? 0) + 1;
+    ipSockets.set(ws.ip, open);
+    if (open > maxSocketsPerIp && capped(ws.ip)) {
+      send(ws, { op: 'error', code: 'rate' });
+      return ws.close();
+    }
     ws.tokens = 120;
     ws.tokensAt = Date.now();
     ws.on('pong', () => { ws.alive = true; });
@@ -231,8 +273,6 @@ export function startRelay(options = {}) {
       }
       if (msg && typeof msg === 'object') handle(ws, msg);
     });
-    ws.on('close', () => onClose(ws));
-    ws.on('error', () => ws.terminate());
   });
 
   // Keep-alive also matters for proxies, which drop idle sockets. Quiet rooms expire here too.
@@ -252,7 +292,7 @@ export function startRelay(options = {}) {
   }, heartbeatMs);
 
   return new Promise((resolve) => {
-    server.listen(port, () => {
+    server.listen(port, options.host, () => {
       resolve({
         port: server.address().port,
         rooms,
@@ -271,7 +311,10 @@ export function startRelay(options = {}) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const relay = await startRelay({
     port: Number(process.env.PORT) || 7700,
-    trustProxy: process.env.TRUST_PROXY === '1',
+    // Only this machine can reach it unless HOST says otherwise; the container sets HOST itself.
+    host: process.env.HOST || '127.0.0.1',
+    // TRUST_PROXY=1 is the older setting and means a Cloudflare tunnel.
+    proxyHeader: process.env.PROXY_HEADER || (process.env.TRUST_PROXY === '1' ? 'cf-connecting-ip' : ''),
   });
   console.log(`Zero Margin relay listening on port ${relay.port}`);
   const stop = async () => {

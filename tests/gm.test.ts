@@ -264,6 +264,10 @@ describe('calling an OpenAI-compatible server', () => {
     expect(normalizeEndpoint('http://localhost:1234/v1/')).toBe('http://localhost:1234/v1');
     expect(normalizeEndpoint('http://192.168.1.20:8000/v1')).toBe('http://192.168.1.20:8000/v1');
     expect(normalizeEndpoint('http://[::1]:8000/v1')).toBe('http://[::1]:8000/v1');
+    expect(normalizeEndpoint('http://[fd12:3456:789a::10]:11434/v1')).toBe('http://[fd12:3456:789a::10]:11434/v1');
+    expect(normalizeEndpoint('http://[fe80::1]:11434/v1')).toBe('http://[fe80::1]:11434/v1');
+    expect(normalizeEndpoint('http://[2001:db8::1]:11434/v1')).toBeNull();
+    expect(normalizeEndpoint('http://fd.example.com/v1')).toBeNull();
     expect(normalizeEndpoint('http://api.example.com/v1')).toBeNull();
     expect(normalizeEndpoint('file:///etc/passwd')).toBeNull();
     expect(normalizeEndpoint('https://user:pw@example.com/v1')).toBeNull();

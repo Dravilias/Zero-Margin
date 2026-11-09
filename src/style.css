@@ -340,8 +340,9 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .pv-num { font: 500 12px var(--mono); color: var(--ink); }
 
 .actions {
-  position: absolute; left: var(--left); right: var(--right); bottom: 6px; height: calc(var(--bar) - 12px);
-  display: flex; flex-wrap: wrap; gap: 3px; align-content: flex-end; justify-content: center; overflow: hidden; z-index: 4; pointer-events: none;
+  position: absolute; left: var(--left); right: var(--right); bottom: 6px; min-height: calc(var(--bar) - 12px);
+  /* A unit with more actions than fit gets a second row, which rises over the board so no button is ever cut off. */
+  display: flex; flex-wrap: wrap; gap: 3px; align-content: flex-end; justify-content: center; z-index: 4; pointer-events: none;
 }
 .actions > * { pointer-events: auto; }
 .actions > .btn-primary { background: var(--panel); }
@@ -489,6 +490,16 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .camp-line.is-narration, .camp-line.is-gm { color: var(--ink); }
 .camp-line.is-bad { color: var(--warn); }
 .camp-choices { display: flex; flex-direction: column; gap: 5px; }
+.camp-tip { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line-2); border-left: 2px solid var(--accent); background: var(--panel, transparent); }
+.camp-tip h3, .camp-guide-item h3 { font-size: 14px; color: var(--accent); letter-spacing: 0.12em; }
+.camp-tip p { font-size: 16px; line-height: 1.25; margin-top: 2px; user-select: text; }
+.duel-tip { flex: none; }
+.lessons .pick-card { min-height: 120px; }
+.camp-guide { width: min(640px, 94vw); }
+.camp-guide-item p { line-height: 1.3; margin-top: 2px; user-select: text; }
+.camp-guide-btn { white-space: nowrap; }
+.camp-street { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border: 1px solid var(--line-2); border-left: 2px solid var(--accent); }
+.camp-street > p { line-height: 1.3; user-select: text; }
 .camp-choice { text-align: left; font-size: 17px; line-height: 1.22; padding: 9px 13px; border: 1px solid var(--line-2); transition: border-color 80ms, background 80ms; }
 .camp-choice:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-dim); }
 .camp-choice:disabled { opacity: 0.38; }

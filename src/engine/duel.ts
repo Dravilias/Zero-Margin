@@ -376,3 +376,26 @@ export function duelAi(s: DuelState, side: DuelSide, rnd: Rand): DuelAction {
   });
   return best;
 }
+
+/* ---------- The lesson: a hint for the hacker, worked out from the state of the duel ---------- */
+
+export type DuelTip = 'goal' | 'pick' | 'program' | 'target' | 'global' | 'trick' | 'end' | 'trace' | 'tracer' | 'sentry' | 'barrier' | 'wait' | 'won' | 'lost';
+
+export function duelTip(s: DuelState, chosen: CardId | null): DuelTip {
+  if (s.winner) return s.winner === 'hacker' ? 'won' : 'lost';
+  if (s.active !== 'hacker') return 'wait';
+  if (chosen) {
+    if (NO_LANE.includes(chosen)) return 'global';
+    if (chosen === 'overload') return 'target';
+    return CARDS[chosen].kind === 'program' ? 'program' : 'trick';
+  }
+  const inPlay = s.lanes.flatMap((l) => l.corp.map((x) => CARDS[x.card].kind));
+  const mine = s.lanes.some((l) => l.hacker.length > 0);
+  if (s.round === 1 && !mine && s.hacker.bandwidth === 2) return 'goal';
+  if (!s.hacker.hand.some((id) => CARDS[id].cost <= s.hacker.bandwidth)) return 'end';
+  if (s.trace >= s.traceMax - 3) return 'trace';
+  if (inPlay.includes('tracer')) return 'tracer';
+  if (s.lanes.some((l) => l.hacker.length > 0 && l.corp.some((x) => CARDS[x.card].kind === 'sentry'))) return 'sentry';
+  if (inPlay.includes('barrier')) return 'barrier';
+  return 'pick';
+}

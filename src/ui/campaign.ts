@@ -2,8 +2,8 @@ import {
   CHROME_COST, CHROME_IDS, FACTIONS, RECRUITABLE, ROLES, WEAPONS,
 } from '../engine/data';
 import {
-  CREW_SYMBOLS, MAX_CHROME, MAX_CREW_PICTURE, MAX_SQUAD, REST_COST, ROLE_MOVES, STAT_KEYS, THERAPY_COST, TREAT_COST, advancesFor, availableGigs, choiceAllowed, chromeCost, clinicCost, createCampaign, crewValue, effectiveThreat, enemyPoints, freeLeft,
-  grenadeCost, hireCost, nodeOf, pickHandle, starterCrew, statLine, weaponCost, xpToNext,
+  CREW_SYMBOLS, MAX_CHROME, advanceRoom, MAX_CREW_PICTURE, MAX_SQUAD, REST_COST, ROLE_MOVES, STAT_KEYS, THERAPY_COST, TREAT_COST, advancesFor, availableGigs, choiceAllowed, chromeCost, clinicCost, createCampaign, crewValue, effectiveThreat, enemyPoints, freeLeft,
+  grenadeCost, hireCost, nodeOf, pickHandle, starterCrew, statLine, streetAllowed, streetEvent, weaponCost, xpToNext,
   type AdvancePick, type Arc, type CampaignMode, type CampaignState, type CrewMember, type Gig, type GmEvent, type NewCampaign,
 } from '../engine/campaign';
 import { THE_NOTE, generateArc } from '../engine/story';
@@ -21,7 +21,7 @@ import type { GameView } from './game';
 import { getLang, t, tx } from './i18n';
 import { crewIcon, roleIcon, symbolIcon } from './icons';
 import { desktopLlm, llmReady as checkLlmReady } from './llm';
-import { settings } from './settings';
+import { saveSettings, settings } from './settings';
 
 /** What this file needs from the main screen code; passed in so the two don't reach into each other. */
 export interface CampaignHostScreens {
@@ -303,6 +303,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
   let squadFor: Gig | null = null;
   let squad: number[] = [];
   let hireFor: RoleId | null = null;
+  let guideOpen = false;
   const drafts = { free: '', gm: '', chat: '' };
   let actor: number | null = null;
   const chatLines: string[] = [];
@@ -350,14 +351,45 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
   const isGm = () => ctl.state.gmSlot === ctl.mySlot;
   const mayManage = (m: CrewMember) => ctl.mySlot === 0 || m.owner === ctl.mySlot;
 
+  /* ---------- Guide: a tip the first time each part of the campaign comes up, and the whole list on request ---------- */
+
+  const GUIDE = ['scene', 'hub', 'crew', 'chrome', 'jobs', 'rep', 'squad', 'debrief', 'street', 'depth'] as const;
+  type GuideId = typeof GUIDE[number];
+
+  /** The first of these the player hasn't read yet, as a card with a button to put it away. */
+  const tip = (...ids: GuideId[]) => {
+    if (isGm()) return null;
+    const id = ids.find((x) => !settings.tipsSeen.includes(x));
+    if (!id) return null;
+    const left = ids.filter((x) => !settings.tipsSeen.includes(x)).length;
+    return el('div.camp-tip', {},
+      el('div.camp-tip-body', {}, el('h3', {}, t(`guide.${id}.title`)), el('p', {}, t(`guide.${id}.text`))),
+      el('button.btn-quiet', {
+        onclick: () => {
+          sfx.click();
+          settings.tipsSeen = [...settings.tipsSeen, id];
+          saveSettings();
+          render();
+        },
+      }, t(left > 1 ? 'guide.next' : 'guide.gotIt')),
+    );
+  };
+
+  const guideDialog = () => el('div.modal-back', {}, el('div.modal.card.camp-guide', {},
+    el('h2', {}, t('guide.title')),
+    GUIDE.map((id) => el('div.camp-guide-item', {}, el('h3', {}, t(`guide.${id}.title`)), el('p', {}, t(`guide.${id}.text`)))),
+    el('div.modal-actions', {}, el('button.btn-primary', { onclick: () => { guideOpen = false; render(); } }, t('common.close'))),
+  ));
+
   const header = (title: string, sub: string) => {
     const s = ctl.state;
     return el('header.table-head', {},
       back(leave, t('game.menu')),
       el('div.camp-title', {}, el('h2', {}, title), el('span.muted', {}, sub)),
+      el('button.btn-quiet.camp-guide-btn', { title: t('guide.title'), onclick: () => { sfx.click(); guideOpen = true; render(); } }, t('guide.open')),
       el('div.camp-stats', {},
         el('div.camp-stat', {}, el('span', {}, t('camp.cash')), el('b', {}, cr(s.cash))),
-        el('div.camp-stat', {}, el('span', {}, t('camp.rep')), el('b', {}, s.rep)),
+        el('div.camp-stat', { title: t('camp.rep.d') }, el('span', {}, t('camp.rep')), el('b', {}, s.rep)),
       ),
       ctl.code ? el('div.code-box', {},
         el('span.code-label', {}, t('table.code')),
@@ -507,6 +539,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
     });
     const stat = (label: string, value: string | number) => el('div.stat', {}, el('span.stat-l', {}, label), el('span.stat-v', {}, value));
     const kinds: GrenadeKind[] = ['frag', 'smoke', 'emp'];
+    const spare = (c: ChromeId) => !!m.spareChrome?.includes(c);
     return el('div.camp-detail', {},
       el('div.camp-detail-head', {},
         crewIcon(m.icon, m.role),
@@ -530,6 +563,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       m.points > 0 && can ? el('div.camp-advance', {},
         el('h3', {}, t('camp.advance', { n: m.points })),
         el('div.camp-advances', {}, advancesFor(m.role).map((p: AdvancePick) => el('button.camp-advance-opt', {
+          disabled: advanceRoom(m, p) <= 0, title: advanceRoom(m, p) <= 0 ? t('camp.advance.maxed') : '',
           onclick: () => ctl.dispatch({ a: 'advance', id: m.id, pick: p }),
         }, el('b', {}, p === 'hp' ? t('camp.advance.hp') : `${t(`stat.${p}`)} +1`), el('span', {}, t(`advance.${p}.d`))))),
       ) : null,
@@ -551,11 +585,11 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       m.ranged ? el('p.muted.small', {}, `${t(`weapon.${m.ranged}`)}: ${WEAPONS[m.ranged].dice}d6${WEAPONS[m.ranged].bonus ? `+${WEAPONS[m.ranged].bonus}` : ''}`) : null,
       el('h3', {}, t('camp.chrome', { n: m.chrome.length, max: MAX_CHROME })),
       el('div.su-chrome', {}, CHROME_IDS.map((c: ChromeId) => el('button.chip-toggle', {
-        class: m.chrome.includes(c) ? 'on' : '', title: t(`chrome.${c}.d`), disabled: !can || !hub || (!m.chrome.includes(c) && (m.chrome.length >= MAX_CHROME || ctl.state.cash < chromeCost(c))),
+        class: m.chrome.includes(c) ? 'on' : '', title: t(`chrome.${c}.d`), disabled: !can || !hub || (!m.chrome.includes(c) && (m.chrome.length >= MAX_CHROME || (!spare(c) && ctl.state.cash < chromeCost(c)))),
         onclick: () => ctl.dispatch({ a: 'chrome', id: m.id, chrome: c }),
-      }, `${t(`chrome.${c}`)}${m.chrome.includes(c) ? '' : ` ${CHROME_COST[c] * 50}`}`))),
+      }, `${t(`chrome.${c}`)}${m.chrome.includes(c) ? '' : spare(c) ? ` ${t('camp.chrome.spare')}` : ` ${CHROME_COST[c] * 50}`}`))),
       can && hub && m.chrome.length >= MAX_CHROME ? el('p.muted.small', {}, t('camp.chrome.full')) : null,
-      can && hub && m.chrome.length < MAX_CHROME && CHROME_IDS.some((c: ChromeId) => !m.chrome.includes(c) && ctl.state.cash < chromeCost(c)) ? el('p.muted.small', {}, t('camp.chrome.cash')) : null,
+      can && hub && m.chrome.length < MAX_CHROME && CHROME_IDS.some((c: ChromeId) => !m.chrome.includes(c) && !spare(c) && ctl.state.cash < chromeCost(c)) ? el('p.muted.small', {}, t('camp.chrome.cash')) : null,
       el('h3', {}, t('squad.grenades')),
       el('div.steppers', {}, kinds.filter((k) => k !== 'emp' || ctl.state.ruleset !== 'quick').map((k) => el('span.stepper', {},
         el('span', {}, `${t(`grenade.${k}`)} (${grenadeCost(k)})`),
@@ -600,6 +634,24 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
     ));
   };
 
+  /** Something that came up between jobs, with the crew's two ways of dealing with it. */
+  const streetCard = () => {
+    const s = ctl.state;
+    const e = streetEvent(s);
+    if (!e) return null;
+    const name = s.crew.find((m) => m.id === s.street?.who)?.name ?? '';
+    return el('div.camp-street', {},
+      el('h3', {}, t(`street.${e.id}.title`)),
+      el('p', {}, t(`street.${e.id}.text`, { name })),
+      isGm() ? null : el('div.camp-choices', {}, e.choices.map((c) => el('button.camp-choice', {
+        disabled: !streetAllowed(s, c),
+        onclick: () => { sfx.click(); ctl.dispatch({ a: 'street', choice: c.id }); },
+      }, t(`street.${e.id}.${c.id}`, { name })))),
+      el('p.muted.small', {}, t('street.default')),
+      tip('street'),
+    );
+  };
+
   const squadDialog = (g: Gig) => {
     const s = ctl.state;
     const ready = s.crew.filter((m) => m.status === 'ok' && mayManage(m));
@@ -620,6 +672,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       }, crewIcon(m.icon, m.role), el('span.camp-crew-name', {}, el('b', {}, m.name), el('small', {}, `${t(`role.${m.role}`)} · ${t('camp.level', { n: m.level })}`))))),
       !ready.length ? el('p.form-msg', {}, t('camp.squadNone')) : null,
       el('p.muted.small', {}, t('camp.odds', { crew: crewValue(chosen), enemy: enemyPoints(chosen, threat), threat, faction: t(`faction.${g.enemy}`) })),
+      tip('squad'),
       s.ruleset === 'full' ? el('p.form-msg', {}, t('camp.fullWarning')) : null,
       el('div.modal-actions', {},
         el('button.btn-primary', {
@@ -686,8 +739,10 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
         ),
         el('section.camp-col', {},
           noteEls(),
+          tip('hub', 'crew', 'chrome', 'jobs', 'rep', ...(s.ruleset === 'full' ? ['depth' as const] : [])),
           s.transcript.length ? el('div.camp-transcript', {}, transcriptEls()) : null,
           busyLine(),
+          streetCard(),
           el('h3', {}, t('camp.jobs')),
           availableGigs(s).map(gigCard),
           isGm() ? null : el('button.btn-quiet.camp-rest', {
@@ -701,6 +756,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       ),
       squadFor ? squadDialog(squadFor) : null,
       hireFor ? hireDialog(hireFor) : null,
+      guideOpen ? guideDialog() : null,
     );
   };
 
@@ -717,6 +773,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
         el('div.camp-scene-body', {},
           node.speaker ? el('h3', {}, tx(node.speaker)) : null,
           el('p.camp-scene-text', {}, said ?? tx(node.text)),
+          tip('scene'),
           busyLine(),
           s.transcript.length ? el('div.camp-transcript', {}, transcriptEls()) : null,
           noteEls(),
@@ -758,6 +815,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
             ))),
           ),
           !d.won && d.story ? el('p.muted', {}, t('camp.debrief.retry')) : null,
+          tip('debrief'),
           el('div.modal-actions', {}, el('button.btn-primary', { onclick: () => ctl.dispatch({ a: 'closeDebrief' }) }, t('camp.debrief.next'))),
         ),
       ),

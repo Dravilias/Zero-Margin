@@ -131,8 +131,10 @@ function grenadeOptions(s: GameState, u: Unit, enemies: Unit[], allies: Unit[], 
   const emp: GrenadeKind = 'emp';
   if (u.grenades.emp > 0 && tune.tactics) {
     for (const e of enemies.filter((v) => inReach(v) && (v.isDrone || v.chrome.length > 0))) {
-      const hits = enemies.filter((v) => cheb(v.x, v.y, e.x, e.y) <= 2 && (v.isDrone || v.chrome.length > 0)).length;
-      out.push({ action: { type: 'grenade', kind: emp, x: e.x, y: e.y }, score: hits * 1.1 });
+      const wired = (v: Unit) => cheb(v.x, v.y, e.x, e.y) <= 2 && (v.isDrone || v.chrome.length > 0);
+      // The pulse doesn't pick sides, so the squad's own chrome and drones count against the throw.
+      const own = allies.filter((v) => isOk(v) && wired(v)).length;
+      out.push({ action: { type: 'grenade', kind: emp, x: e.x, y: e.y }, score: (enemies.filter(wired).length - own * 1.5) * 1.1 });
     }
   }
   return out;

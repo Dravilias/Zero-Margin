@@ -7,7 +7,8 @@ services:
     ports:
       - "127.0.0.1:7700:7700"
     environment:
-      - TRUST_PROXY=1
+      # The header the tunnel or proxy in front sets to the player's address. It must overwrite whatever the client sent.
+      - PROXY_HEADER=cf-connecting-ip
     read_only: true
     tmpfs:
       - /tmp
