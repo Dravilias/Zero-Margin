@@ -34,6 +34,8 @@ export interface Loadout {
   bonus?: UnitBonus;
   /** Campaign level; role abilities grow with it. */
   rank?: number;
+  /** A campaign character's own icon: see crewIconOk in the campaign rules. */
+  icon?: string;
   /** Lasting injuries carried in from earlier jobs. */
   injuries?: InjuryId[];
   /** Humanity has run out: this person can snap in the middle of a fight. */
@@ -107,6 +109,8 @@ export interface Unit {
   team: number;
   name: string;
   role: RoleId;
+  /** A campaign character's own icon, drawn instead of the role icon. */
+  icon?: string;
   faction: FactionId;
   stats: Stats;
   skills: Skills;

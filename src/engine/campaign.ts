@@ -88,6 +88,19 @@ export interface CrewMember {
   injuries: InjuryId[];
   missions: number;
   kills: number;
+  /** Their own icon instead of the role's, if the player picked one. */
+  icon?: string;
+}
+
+/** The built-in symbols a character can wear. Their drawings live with the other icons. */
+export const CREW_SYMBOLS = ['star', 'crown', 'flame', 'skull', 'anchor', 'heart', 'diamond', 'moon', 'sun', 'spade', 'wave', 'target', 'key', 'watch', 'cross'] as const;
+/** A picture is shrunk to a small square before it's stored, so this is plenty and keeps saves and online play light. */
+export const MAX_CREW_PICTURE = 24000;
+
+/** A symbol from the list, or a small picture in a format every copy of the game can show. */
+export function crewIconOk(icon: string): boolean {
+  if (icon.startsWith('sym:')) return (CREW_SYMBOLS as readonly string[]).includes(icon.slice(4));
+  return icon.length <= MAX_CREW_PICTURE && /^img:data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(icon);
 }
 
 export interface Player { name: string; peer: string | null; connected: boolean }
@@ -308,7 +321,7 @@ const crewLoadout = (m: CrewMember): Loadout => {
   bonus.stats.nerve = (bonus.stats.nerve ?? 0) - humanityPenalty(m);
   return {
     name: m.name, role: m.role, ranged: m.ranged, melee: m.melee, chrome: [...m.chrome], extra: { ...m.extra }, bonus,
-    rank: m.level, injuries: [...m.injuries], unstable: m.humanity <= 0,
+    rank: m.level, injuries: [...m.injuries], unstable: m.humanity <= 0, ...(m.icon ? { icon: m.icon } : {}),
   };
 };
 
@@ -517,6 +530,7 @@ export type CampaignAction =
   | { a: 'hire'; role: RoleId; name: string }
   | { a: 'dismiss'; id: number }
   | { a: 'rename'; id: number; name: string }
+  | { a: 'icon'; id: number; icon: string | null }
   | { a: 'setOwner'; id: number; slot: number }
   | { a: 'weapon'; id: number; kind: 'ranged' | 'melee'; weapon: WeaponId | null }
   | { a: 'chrome'; id: number; chrome: ChromeId }
@@ -611,6 +625,14 @@ function step(s: CampaignState, act: CampaignAction, slot: number, out: { roll?:
       const m = member(s, act.id);
       mayManage(slot, m);
       m.name = clean(act.name, 24) || m.name;
+      break;
+    }
+    case 'icon': {
+      const m = member(s, act.id);
+      mayManage(slot, m);
+      if (act.icon === null) delete m.icon;
+      else if (typeof act.icon === 'string' && crewIconOk(act.icon)) m.icon = act.icon;
+      else refuse('badIcon');
       break;
     }
     case 'setOwner': {

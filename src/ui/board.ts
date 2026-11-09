@@ -4,8 +4,22 @@ import { sfx } from './audio';
 import { ART_SCALE, OUTER, T, renderBoardArt, type BoardArt } from './boardArt';
 import { afterPaint, el, loadingBar } from './dom';
 import { t } from './i18n';
-import { ROLE_PATHS, isStroked } from './icons';
+import { ROLE_PATHS, SYMBOL_PATHS, isStroked, pictureOf, symbolOf } from './icons';
 import { settings, speedFactor } from './settings';
+
+const symbolPaths = new Map<string, Path2D>();
+/** Characters' own pictures, decoded once each. One that isn't ready yet shows the role icon meanwhile. */
+const pictures = new Map<string, HTMLImageElement>();
+function picture(src: string): HTMLImageElement | null {
+  let img = pictures.get(src);
+  if (!img) {
+    if (pictures.size > 64) pictures.clear();
+    img = new Image();
+    img.src = src;
+    pictures.set(src, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
 
 const iconPaths = new Map<RoleId, Path2D>();
 function icon(role: RoleId): Path2D {
@@ -739,21 +753,39 @@ export class Board {
       c.stroke();
     }
 
-    // Role icon
+    // The character's own picture or symbol, or else the role icon.
+    const pic = pictureOf(u.icon);
+    const img = pic ? picture(pic) : null;
+    const sym = symbolOf(u.icon);
     c.save();
-    const iconScale = (r * 1.18) / 24;
-    c.translate(cx - 12 * iconScale, cy - 12 * iconScale);
-    c.scale(iconScale, iconScale);
-    const ink = spent ? '#aeb6c4' : '#ffffff';
-    c.fillStyle = ink;
-    c.strokeStyle = ink;
-    c.lineWidth = 2;
-    c.lineJoin = 'miter';
-    if (isStroked(u.role)) {
-      c.stroke(icon(u.role));
-      if (u.role === 'sapper') c.fill(icon(u.role));
+    if (img) {
+      const pr = r * 0.74;
+      c.beginPath();
+      c.arc(cx, cy, pr, 0, Math.PI * 2);
+      c.clip();
+      if (spent) c.globalAlpha = 0.55;
+      c.drawImage(img, cx - pr, cy - pr, pr * 2, pr * 2);
     } else {
-      c.fill(icon(u.role));
+      const iconScale = (r * 1.18) / 24;
+      c.translate(cx - 12 * iconScale, cy - 12 * iconScale);
+      c.scale(iconScale, iconScale);
+      const ink = spent ? '#aeb6c4' : '#ffffff';
+      c.fillStyle = ink;
+      c.strokeStyle = ink;
+      c.lineWidth = 2;
+      c.lineJoin = 'miter';
+      if (sym) {
+        let p = symbolPaths.get(sym);
+        if (!p) symbolPaths.set(sym, (p = new Path2D(SYMBOL_PATHS[sym].d)));
+        c.lineCap = 'round';
+        if (SYMBOL_PATHS[sym].stroke) c.stroke(p);
+        else c.fill(p, 'evenodd');
+      } else if (isStroked(u.role)) {
+        c.stroke(icon(u.role));
+        if (u.role === 'sapper') c.fill(icon(u.role));
+      } else {
+        c.fill(icon(u.role));
+      }
     }
     c.restore();
     c.restore();

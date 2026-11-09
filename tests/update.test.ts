@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cleanEnv, isNewer, latestVersion, runUpdate, usableSource } from '../electron/update';
+import { createHash } from 'node:crypto';
+import { RELEASE_FEED, cleanEnv, downloadChecked, isNewer, latestRelease, latestVersion, runUpdate, usableSource } from '../electron/update';
 
 const reply = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
 
@@ -29,6 +30,66 @@ describe('update check', () => {
   it('keeps an AppImage’s own settings away from the tools it runs', () => {
     const env = cleanEnv({ APPIMAGE: '/a', LD_LIBRARY_PATH: '/x', PATH: '/tmp/.mount_ZeroMa1/usr/bin:/usr/bin', HOME: '/h' });
     expect(env).toEqual({ PATH: '/usr/bin', HOME: '/h' });
+  });
+});
+
+describe('updating from a release', () => {
+  const sha = 'a'.repeat(64);
+  const release = (over: Record<string, unknown> = {}, asset: Record<string, unknown> = {}) => ({
+    tag_name: 'v0.7.0', draft: false, prerelease: false, html_url: 'https://github.com/Dravilias/Zero-Margin/releases/tag/v0.7.0',
+    assets: [
+      { name: 'ZeroMargin-0.7.0-linux-x86_64.AppImage', size: 5, digest: `sha256:${sha}`, browser_download_url: 'https://github.com/Dravilias/Zero-Margin/releases/download/v0.7.0/ZeroMargin-0.7.0-linux-x86_64.AppImage' },
+      { name: 'ZeroMargin-0.7.0-win-x64-setup.exe', size: 1234, digest: `sha256:${sha}`, browser_download_url: 'https://github.com/Dravilias/Zero-Margin/releases/download/v0.7.0/ZeroMargin-0.7.0-win-x64-setup.exe', ...asset },
+    ],
+    ...over,
+  });
+
+  it('finds the Windows installer in the newest release', async () => {
+    const r = await latestRelease(reply(200, release()));
+    expect(r).toEqual({
+      version: '0.7.0', page: 'https://github.com/Dravilias/Zero-Margin/releases/tag/v0.7.0',
+      windows: { name: 'ZeroMargin-0.7.0-win-x64-setup.exe', url: 'https://github.com/Dravilias/Zero-Margin/releases/download/v0.7.0/ZeroMargin-0.7.0-win-x64-setup.exe', size: 1234, sha256: sha },
+    });
+  });
+
+  it('won’t take an installer from anywhere else, without a checksum, or under another name', async () => {
+    expect((await latestRelease(reply(200, release({}, { browser_download_url: 'https://evil.example/ZeroMargin-0.7.0-win-x64-setup.exe' }))))!.windows).toBeNull();
+    expect((await latestRelease(reply(200, release({}, { browser_download_url: 'https://github.com/someone/else/releases/download/v0.7.0/x.exe' }))))!.windows).toBeNull();
+    expect((await latestRelease(reply(200, release({}, { digest: null }))))!.windows).toBeNull();
+    expect((await latestRelease(reply(200, release({}, { digest: 'md5:abc' }))))!.windows).toBeNull();
+    expect((await latestRelease(reply(200, release({}, { name: 'ZeroMargin-0.6.9-win-x64-setup.exe' }))))!.windows).toBeNull();
+    expect((await latestRelease(reply(200, release({}, { size: 0 }))))!.windows).toBeNull();
+    // A release with no installer still says which version is out, so the menu can link to it.
+    expect((await latestRelease(reply(200, release({ assets: [] }))))!.version).toBe('0.7.0');
+    expect(await latestRelease(reply(200, release({ draft: true })))).toBeNull();
+    expect(await latestRelease(reply(200, release({ tag_name: 'v0.7.0; rm -rf /' })))).toBeNull();
+    expect(await latestRelease(reply(404, {}))).toBeNull();
+    expect(await latestRelease((async () => { throw new Error('offline'); }) as unknown as typeof fetch)).toBeNull();
+    // Only a test feed, set on purpose on the player's own PC, may point somewhere else.
+    expect((await latestRelease(reply(200, release({}, { browser_download_url: 'http://10.0.2.2:8765/x.exe' })), 'http://10.0.2.2:8765/feed.json'))!.windows).not.toBeNull();
+    expect(RELEASE_FEED).toBe('https://api.github.com/repos/Dravilias/Zero-Margin/releases/latest');
+  });
+
+  it('keeps a download only if its size and checksum match', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zm-download-'));
+    const data = Buffer.from('pretend installer '.repeat(500));
+    const real = createHash('sha256').update(data).digest('hex');
+    const serve = (bytes: Buffer) => (async () => new Response(new Uint8Array(bytes), { status: 200 })) as unknown as typeof fetch;
+    const file = { name: 'setup.exe', url: 'https://github.com/x', size: data.length, sha256: real };
+    const seen: number[] = [];
+    const dest = path.join(dir, 'setup.exe');
+    expect(await downloadChecked(file, dest, (n) => seen.push(n), serve(data))).toEqual({ ok: true });
+    expect(fs.readFileSync(dest).equals(data)).toBe(true);
+    expect(seen.at(-1)).toBe(data.length);
+
+    const bad = path.join(dir, 'bad.exe');
+    expect((await downloadChecked({ ...file, sha256: 'b'.repeat(64) }, bad, undefined, serve(data))).ok).toBe(false);
+    expect((await downloadChecked(file, bad, undefined, serve(data.subarray(1)))).ok).toBe(false);
+    expect((await downloadChecked(file, bad, undefined, serve(Buffer.concat([data, Buffer.from('extra')])))).ok).toBe(false);
+    expect((await downloadChecked(file, bad, undefined, (async () => new Response('nope', { status: 404 })) as unknown as typeof fetch)).ok).toBe(false);
+    // Nothing half-downloaded or wrong is left lying around to be run by mistake.
+    expect(fs.readdirSync(dir)).toEqual(['setup.exe']);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 

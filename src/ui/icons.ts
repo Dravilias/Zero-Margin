@@ -1,3 +1,4 @@
+import type { CREW_SYMBOLS } from '../engine/campaign';
 import type { RoleId } from '../engine/types';
 
 /** Original role icons on a 24x24 grid, shared by the board tokens and the panels. */
@@ -40,6 +41,67 @@ export function roleIcon(role: RoleId): SVGSVGElement {
   }
   svg.appendChild(path);
   return svg;
+}
+
+export type CrewSymbol = (typeof CREW_SYMBOLS)[number];
+
+/** Symbols a campaign character can wear instead of their role icon, on the same 24x24 grid. Filled ones use even-odd, so they can have holes. */
+export const SYMBOL_PATHS: Record<CrewSymbol, { d: string; stroke?: boolean }> = {
+  star: { d: 'M12 2.500l2.900 6 6.600.9-4.800 4.600 1.200 6.500L12 17.400l-5.900 3.100 1.200-6.500L2.500 9.400l6.600-.9z' },
+  crown: { d: 'M3 18.500h18L20 7.500l-5 4.500-3-7-3 7-5-4.500z' },
+  flame: { d: 'M12 2c1 4 6 6.500 6 12.500a6 6 0 0 1-12 0c0-3 2-5 3-7 0 2 1 3 2 3 0-3 0-6 1-8.500z' },
+  skull: { d: 'M12 3a8 8 0 0 0-8 8c0 3 1.500 4.500 3 5.500V21h10v-4.500c1.500-1 3-2.500 3-5.500a8 8 0 0 0-8-8zM9 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z' },
+  anchor: { d: 'M12 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 7v14M7.500 11h9M4 14c0 4 4 7 8 7s8-3 8-7', stroke: true },
+  heart: { d: 'M12 20.500S3 15 3 8.800A4.800 4.800 0 0 1 12 6a4.800 4.800 0 0 1 9 2.800C21 15 12 20.500 12 20.500z' },
+  diamond: { d: 'M12 2.500 20 12l-8 9.500L4 12z' },
+  moon: { d: 'M15 3a9 9 0 1 0 6 15.500A7.500 7.500 0 0 1 15 3z' },
+  sun: { d: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900 7 7M17 17l2.100 2.100M4.900 19.100 7 17M17 7l2.100-2.100', stroke: true },
+  spade: { d: 'M12 2.500C9 7 4 9.500 4 13.500a4 4 0 0 0 7 2.600L10 21h4l-1-4.900a4 4 0 0 0 7-2.600C20 9.500 15 7 12 2.500z' },
+  wave: { d: 'M2 9c3-3 5 3 8 0s5 3 8 0 3-1 4 0M2 15c3-3 5 3 8 0s5 3 8 0 3-1 4 0', stroke: true },
+  target: { d: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z', stroke: true },
+  key: { d: 'M7.500 4.500a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM10.500 11.500 20 21M16.500 17.500 19 15', stroke: true },
+  watch: { d: 'M12 3 22 20.500H2zM12 11a3 3 0 1 0 0 6 3 3 0 0 0 0-6z' },
+  cross: { d: 'M5 5l14 14M19 5 5 19', stroke: true },
+};
+
+function svgIcon(d: string, stroke: boolean, cls: string): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', cls);
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', d);
+  if (stroke) {
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('stroke-linecap', 'round');
+  } else {
+    path.setAttribute('fill', 'currentColor');
+    path.setAttribute('fill-rule', 'evenodd');
+  }
+  svg.appendChild(path);
+  return svg;
+}
+
+export const symbolOf = (icon: string | undefined): CrewSymbol | null =>
+  icon?.startsWith('sym:') && Object.hasOwn(SYMBOL_PATHS, icon.slice(4)) ? (icon.slice(4) as CrewSymbol) : null;
+
+export const pictureOf = (icon: string | undefined): string | null => (icon?.startsWith('img:') ? icon.slice(4) : null);
+
+export function symbolIcon(sym: CrewSymbol): SVGSVGElement {
+  return svgIcon(SYMBOL_PATHS[sym].d, !!SYMBOL_PATHS[sym].stroke, 'role-icon');
+}
+
+/** A character's own icon if they have one, otherwise their role's. */
+export function crewIcon(icon: string | undefined, role: RoleId): Element {
+  const sym = symbolOf(icon);
+  if (sym) return symbolIcon(sym);
+  const pic = pictureOf(icon);
+  if (pic) return Object.assign(document.createElement('img'), { className: 'role-icon crew-pic', src: pic, alt: '' });
+  return roleIcon(role);
 }
 
 /** Action bar icons, on the same 24x24 grid. All are drawn as plain strokes. */

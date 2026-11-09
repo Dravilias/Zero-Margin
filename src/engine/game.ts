@@ -46,7 +46,7 @@ function makeUnit(cfg: GameConfig, side: number, l: Loadout, index: number): Uni
   };
   return {
     id: `s${side}u${index}`,
-    side, team: sc.team, name: l.name || unitName(sc.faction, index), role: l.role, faction: sc.faction,
+    side, team: sc.team, name: l.name || unitName(sc.faction, index), role: l.role, ...(l.icon ? { icon: l.icon } : {}), faction: sc.faction,
     stats, skills, hp: hpMax, hpMax, armor, armorMax: armor, armorHead, armorHeadMax: armorHead, move,
     ranged: l.ranged, melee, ammo: l.ranged ? WEAPONS[l.ranged].mag : 0, chrome: [...l.chrome], used: [], grenades,
     kits: role.kits + (l.role === 'patcher' ? Math.floor(rank / 2) : 0), drones: role.drones + (l.role === 'wrench' ? Math.floor(rank / 3) : 0), x: 0, y: 0, state: 'ok', deathRolls: 0, ap: 0, activated: false,

@@ -295,24 +295,30 @@ async function showUpdate(slot: HTMLElement): Promise<void> {
   if (!u.available || !slot.isConnected) return;
   const label = t('update.available', { version: u.latest ?? '' });
   slot.replaceChildren(u.canInstall
-    ? el('button.menu-item.menu-update', { onclick: () => updateDialog(u.latest ?? '') }, el('span.menu-title', {}, label), el('span.menu-sub', {}, t('update.install')))
+    ? el('button.menu-item.menu-update', { onclick: () => updateDialog(u.latest ?? '', u.kind === 'download' ? u.sizeMb ?? 0 : null) }, el('span.menu-title', {}, label), el('span.menu-sub', {}, t('update.install')))
     : el('button.menu-item.menu-update', { onclick: () => window.open(u.page) }, el('span.menu-title', {}, label), el('span.menu-sub', {}, t('update.page'))));
 }
 
-function updateDialog(version: string): void {
+/** sizeMb is set when the update is an installer to download, rather than a build from the source. */
+function updateDialog(version: string, sizeMb: number | null): void {
   const back = el('div.modal-back', {}, el('div.modal.card', {},
     el('h2', {}, t('update.title', { version })),
-    el('p', {}, t('update.explain')),
+    el('p', {}, sizeMb === null ? t('update.explain') : t('update.explainDownload', { version, size: sizeMb })),
     el('div.modal-actions', {},
-      el('button.btn-primary', { onclick: () => void runGameUpdate() }, t('update.go')),
+      el('button.btn-primary', { onclick: () => void runGameUpdate(sizeMb !== null) }, t('update.go')),
       el('button.btn-quiet', { onclick: () => back.remove() }, t('common.cancel')),
     ),
   ));
   root.appendChild(back);
 }
 
-async function runGameUpdate(): Promise<void> {
-  screen(loadingPage(t('update.wait'), t('update.running')));
+async function runGameUpdate(download: boolean): Promise<void> {
+  const page = loadingPage(download ? t('update.downloading', { percent: 0 }) : t('update.wait'), t('update.running'));
+  screen(page);
+  const line = page.querySelector('p');
+  window.zmDesktop!.onUpdateProgress?.((percent) => {
+    if (line) line.textContent = percent >= 100 ? t('update.installing') : t('update.downloading', { percent });
+  });
   const res = await window.zmDesktop!.updateInstall();
   // On success this copy is already closing and the new one is starting.
   if (res.ok) return;

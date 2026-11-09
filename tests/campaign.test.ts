@@ -279,6 +279,7 @@ describe('players', () => {
     s = act(s, { a: 'setOwner', id: 1, slot: 1 }, 1);
     expect(refused(s, { a: 'setOwner', id: 1, slot: 2 }, 2)).toBe('notYours');
     expect(refused(s, { a: 'chrome', id: 2, chrome: 'stim' }, 1)).toBe('notYours');
+    expect(refused(s, { a: 'icon', id: 2, icon: 'sym:star' }, 1)).toBe('notYours');
     s = act(s, { a: 'chrome', id: 1, chrome: 'stim' }, 1);
     // The game master can't also play the crew.
     s = act(s, { a: 'setGm', slot: 1 });
@@ -289,6 +290,25 @@ describe('players', () => {
     expect(s.threatMod).toBe(1);
     expect(refused(s, { a: 'gmEvent', kind: 'windfall' }, 1)).toBe('eventUsed');
     expect(refused(s, { a: 'gmEvent', kind: 'windfall' }, 2)).toBe('gmOnly');
+  });
+
+  it('lets each character wear a symbol or a small picture of their own into battle', () => {
+    let s = newCamp({ mode: 'endless', arc: null });
+    const pic = `img:data:image/webp;base64,${'A'.repeat(4000)}`;
+    s = act(s, { a: 'icon', id: 1, icon: 'sym:skull' });
+    expect(s.crew.find((m) => m.id === 1)!.icon).toBe('sym:skull');
+    s = act(s, { a: 'icon', id: 2, icon: pic });
+    for (const bad of ['sym:nope', 'img:https://example.com/a.png', 'img:data:image/svg+xml;base64,AAAA', 'img:data:image/png;base64,<script>', `img:data:image/png;base64,${'A'.repeat(30000)}`, '']) {
+      expect(refused(s, { a: 'icon', id: 1, icon: bad }), bad.slice(0, 40)).toBe('badIcon');
+    }
+    s = act(s, { a: 'takeGig', gig: s.offers[1].id, squad: [1, 2, 3] });
+    const units = buildMission(s).units.filter((u) => u.side === 0);
+    expect(units.find((u) => u.id === 's0u0')!.icon).toBe('sym:skull');
+    expect(units.find((u) => u.id === 's0u1')!.icon).toBe(pic);
+    expect(units.find((u) => u.id === 's0u2')!.icon).toBeUndefined();
+    // Taking it off goes back to the role icon.
+    const back = act(newCamp({ mode: 'endless', arc: null }), { a: 'icon', id: 1, icon: 'sym:star' });
+    expect(act(back, { a: 'icon', id: 1, icon: null }).crew.find((m) => m.id === 1)!.icon).toBeUndefined();
   });
 
   it('lets about half of all failed free actions pass without a penalty', () => {

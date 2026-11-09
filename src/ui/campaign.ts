@@ -2,7 +2,7 @@ import {
   CHROME_COST, CHROME_IDS, FACTIONS, RECRUITABLE, ROLES, WEAPONS,
 } from '../engine/data';
 import {
-  MAX_CHROME, MAX_SQUAD, REST_COST, ROLE_MOVES, STAT_KEYS, THERAPY_COST, TREAT_COST, advancesFor, availableGigs, choiceAllowed, chromeCost, clinicCost, createCampaign, crewValue, effectiveThreat, enemyPoints, freeLeft,
+  CREW_SYMBOLS, MAX_CHROME, MAX_CREW_PICTURE, MAX_SQUAD, REST_COST, ROLE_MOVES, STAT_KEYS, THERAPY_COST, TREAT_COST, advancesFor, availableGigs, choiceAllowed, chromeCost, clinicCost, createCampaign, crewValue, effectiveThreat, enemyPoints, freeLeft,
   grenadeCost, hireCost, nodeOf, pickHandle, starterCrew, statLine, weaponCost, xpToNext,
   type AdvancePick, type Arc, type CampaignMode, type CampaignState, type CrewMember, type Gig, type GmEvent, type NewCampaign,
 } from '../engine/campaign';
@@ -19,7 +19,7 @@ import { sfx } from './audio';
 import { copyText, el, loadingBar, loadingPage, selectEl } from './dom';
 import type { GameView } from './game';
 import { getLang, t, tx } from './i18n';
-import { roleIcon } from './icons';
+import { crewIcon, roleIcon, symbolIcon } from './icons';
 import { desktopLlm, llmReady as checkLlmReady } from './llm';
 import { settings } from './settings';
 
@@ -124,6 +124,33 @@ const hostOptions = (relay: RelayClient | null) => ({
   resolve: tx,
   save: saveCampaign,
 });
+
+/**
+ * Turns a picture the player chose into a small square crew icon. It's cropped to the middle and shrunk
+ * until it fits, so a large photo costs a few kilobytes in saves and online play.
+ */
+async function pictureToIcon(file: File): Promise<string | null> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const side = Math.min(bitmap.width, bitmap.height);
+    for (const [size, quality] of [[96, 0.85], [72, 0.75], [56, 0.6]] as const) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const c = canvas.getContext('2d')!;
+      c.imageSmoothingQuality = 'high';
+      c.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size);
+      let data = canvas.toDataURL('image/webp', quality);
+      if (!data.startsWith('data:image/webp')) data = canvas.toDataURL('image/jpeg', quality);
+      if (`img:${data}`.length <= MAX_CREW_PICTURE) {
+        bitmap.close();
+        return `img:${data}`;
+      }
+    }
+    bitmap.close();
+  } catch { /* not a picture the browser can read */ }
+  return null;
+}
 
 /* ---------- A new campaign ---------- */
 
@@ -420,11 +447,40 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
 
   /* ---------- Crew panel ---------- */
 
+  /** The role icon, the built-in symbols, or a picture of the player's own. */
+  const iconPicker = (m: CrewMember) => {
+    const pick = (icon: string | null) => ctl.dispatch({ a: 'icon', id: m.id, icon });
+    const file = el('input', {
+      type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true,
+      onchange: async (e: Event) => {
+        const input = e.target as HTMLInputElement;
+        const chosen = input.files?.[0];
+        input.value = '';
+        if (!chosen) return;
+        const icon = await pictureToIcon(chosen);
+        if (icon) pick(icon);
+        else {
+          notes.push(t('camp.icon.bad'));
+          render();
+        }
+      },
+    }) as HTMLInputElement;
+    const chip = (on: boolean, title: string, content: Element, onclick: () => void) =>
+      el('button.icon-pick', { class: on ? 'on' : '', title, 'aria-label': title, onclick }, content);
+    return el('div.camp-icons', {},
+      el('span.camp-icons-label', {}, t('camp.icon')),
+      chip(!m.icon, t('camp.icon.role'), roleIcon(m.role), () => pick(null)),
+      CREW_SYMBOLS.map((sym) => chip(m.icon === `sym:${sym}`, t('camp.icon.symbol'), symbolIcon(sym), () => pick(`sym:${sym}`))),
+      chip(!!m.icon?.startsWith('img:'), t('camp.icon.upload'), m.icon?.startsWith('img:') ? crewIcon(m.icon, m.role) : el('span.icon-pick-plus', {}, '+'), () => file.click()),
+      file,
+    );
+  };
+
   const crewRow = (m: CrewMember) => el('button.camp-crew', {
     class: `${selected === m.id ? 'on' : ''} is-${m.status}`,
     onclick: () => { selected = m.id; sfx.click(); render(); },
   },
-  roleIcon(m.role),
+  crewIcon(m.icon, m.role),
   el('span.camp-crew-name', {}, el('b', {}, m.name), el('small', {}, `${t(`role.${m.role}`)} · ${t('camp.level', { n: m.level })}${ctl.online ? ` · ${ctl.state.players[m.owner]?.name ?? ''}` : ''}`)),
   m.points > 0 ? el('span.camp-flag', {}, '+') : null,
   m.status !== 'ok' ? el('span.camp-crew-status', {}, statusLabel(m)) : null,
@@ -453,7 +509,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
     const kinds: GrenadeKind[] = ['frag', 'smoke', 'emp'];
     return el('div.camp-detail', {},
       el('div.camp-detail-head', {},
-        roleIcon(m.role),
+        crewIcon(m.icon, m.role),
         can ? el('input.camp-name', {
           value: m.name, maxlength: 24,
           onchange: (e: Event) => ctl.dispatch({ a: 'rename', id: m.id, name: (e.target as HTMLInputElement).value }),
@@ -461,6 +517,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
         el('span.muted', {}, `${t(`role.${m.role}`)} · ${t('camp.level', { n: m.level })} · ${statusLabel(m)}`),
       ),
       el('p.pick-desc', {}, t(`role.${m.role}.d`)),
+      can ? iconPicker(m) : null,
       el('div.stats', {},
         stat(t('camp.xp'), `${m.xp}/${xpToNext(m)}`),
         stat(t('game.hp'), 10 + stats.grit * 2 + m.bonus.hp),
@@ -560,7 +617,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
           squad = squad.includes(m.id) ? squad.filter((x) => x !== m.id) : [...squad, m.id];
           render();
         },
-      }, roleIcon(m.role), el('span.camp-crew-name', {}, el('b', {}, m.name), el('small', {}, `${t(`role.${m.role}`)} · ${t('camp.level', { n: m.level })}`))))),
+      }, crewIcon(m.icon, m.role), el('span.camp-crew-name', {}, el('b', {}, m.name), el('small', {}, `${t(`role.${m.role}`)} · ${t('camp.level', { n: m.level })}`))))),
       !ready.length ? el('p.form-msg', {}, t('camp.squadNone')) : null,
       el('p.muted.small', {}, t('camp.odds', { crew: crewValue(chosen), enemy: enemyPoints(chosen, threat), threat, faction: t(`faction.${g.enemy}`) })),
       s.ruleset === 'full' ? el('p.form-msg', {}, t('camp.fullWarning')) : null,

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { callChat, callWithFallbacks, normalizeEndpoint, type LlmServer, type LlmTierCall } from './llm';
 import { fakeLlmReply, runSmoke } from './smoke';
-import { REPO_PAGE, cleanEnv, isNewer, latestVersion, runUpdate, usableSource } from './update';
+import { RELEASE_FEED, REPO_PAGE, cleanEnv, downloadChecked, isNewer, latestRelease, latestVersion, runUpdate, usableSource, type Release } from './update';
 
 const smokeTest = process.env.ZM_SMOKE_TEST === '1';
 const fakeLlm = smokeTest && process.env.ZM_SMOKE_CAMPAIGN === '1';
@@ -152,16 +152,48 @@ function updateSource(): string | null {
 }
 
 function registerUpdates(): void {
+  // A clone updates to whatever is on main. Everything else can only go as far as the newest release.
+  let release: Release | null = null;
   ipcMain.handle('zm-update-check', async () => {
     const current = app.getVersion();
+    const fromClone = !!updateSource();
+    const canDownload = app.isPackaged && process.platform === 'win32';
+    let latest: string | null;
     // A test run has no business on the network, and can ask to pretend there's an update.
-    const latest = smokeTest ? (process.env.ZM_SMOKE_UPDATE ?? null) : await latestVersion();
-    return { current, latest, available: !!latest && isNewer(latest, current), canInstall: !!updateSource(), page: REPO_PAGE };
+    if (smokeTest) latest = process.env.ZM_SMOKE_UPDATE ?? null;
+    else if (fromClone) latest = await latestVersion();
+    else {
+      release = await latestRelease(fetch, process.env.ZM_UPDATE_FEED || RELEASE_FEED);
+      latest = release?.version ?? null;
+    }
+    const download = canDownload && !fromClone && release?.version === latest && release?.windows ? release.windows : null;
+    return {
+      current, latest, available: !!latest && isNewer(latest, current),
+      canInstall: fromClone || !!download, kind: fromClone ? 'build' : download ? 'download' : 'page',
+      sizeMb: download ? Math.round(download.size / 1e6) : 0, page: release?.page ?? REPO_PAGE,
+    };
   });
-  ipcMain.handle('zm-update-install', async () => {
+  ipcMain.handle('zm-update-install', async (e) => {
+    const log = path.join(app.getPath('userData'), 'update.log');
+    const file = release?.windows;
+    if (!updateSource() && file && app.isPackaged && process.platform === 'win32') {
+      const dest = path.join(app.getPath('temp'), file.name);
+      let last = -1;
+      const res = await downloadChecked(file, dest, (done) => {
+        const pct = Math.floor((done / file.size) * 100);
+        if (pct !== last) e.sender.send('zm-update-progress', (last = pct));
+      });
+      if (!res.ok) {
+        fs.writeFileSync(log, `Update to ${release?.version} from ${file.url}: ${res.reason}\n`);
+        return { ok: false, log };
+      }
+      // A silent install closes this copy if it's still running, and --force-run starts the new one afterwards.
+      spawn(dest, ['/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
+      app.quit();
+      return { ok: true, log };
+    }
     const dir = updateSource();
     if (!dir) return { ok: false, log: '' };
-    const log = path.join(app.getPath('userData'), 'update.log');
     if (!await runUpdate(dir, log, process.env)) return { ok: false, log };
     // Wait a moment so this copy has let go of the single-copy lock when the new one starts.
     const installed = path.join(installDir(), 'ZeroMargin.AppImage');

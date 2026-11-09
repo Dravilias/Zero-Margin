@@ -50,9 +50,17 @@ The script builds the game if needed, then adds it to the app menu and as a `zer
 
 ## Updates
 
-The main menu shows an update entry when GitHub has a newer version. Copies installed with `install.sh` update and restart from that entry, by running `git pull` and the install script. Other copies get a link to this page instead.
+The main menu shows an update entry when a newer version is out. How it updates depends on where the copy came from:
 
-To check, the game reads the version number from this repository each time the menu opens. The check can be turned off in Settings.
+| Copy | What the update entry does |
+| --- | --- |
+| **Windows installer** | Downloads the installer from the newest release, checks its size and SHA-256 checksum against GitHub's, installs it and restarts the game. Saves and settings are kept. |
+| **Linux, installed with `install.sh`** | Runs `git pull` and the install script, then restarts the game. It follows `main`, so it can be newer than the latest release. |
+| **Anything else** | Opens the releases page. |
+
+Windows copies from v0.6.12 or earlier have no automatic update, so they need the new installer run by hand once.
+
+To check, the game asks GitHub each time the menu opens. The check can be turned off in Settings.
 
 ## Game modes
 
@@ -155,6 +163,10 @@ npx esbuild scripts/sim.ts --bundle --platform=node --outfile=/tmp/zm-sim.cjs &&
 ### Publishing an update
 
 The update check only compares version numbers, so a new version needs its `version` in `package.json` raised before it's pushed.
+
+Windows copies only update from a published GitHub release. Its installer must be attached under the name electron-builder gives it, `ZeroMargin-<version>-win-x64-setup.exe`, and its tag must be `v<version>`. GitHub records each file's checksum, which the game checks before installing.
+
+Setting `ZM_UPDATE_FEED` to a URL of a file shaped like GitHub's latest-release response makes a copy check that instead, so a full Windows update can be tested without publishing anything.
 
 ### Project layout
 

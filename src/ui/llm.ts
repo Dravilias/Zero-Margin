@@ -8,7 +8,8 @@ declare global {
   interface Window {
     zmDesktop?: {
       quit(): void;
-      updateCheck(): Promise<{ current: string; latest: string | null; available: boolean; canInstall: boolean; page: string }>;
+      updateCheck(): Promise<{ current: string; latest: string | null; available: boolean; canInstall: boolean; kind?: 'build' | 'download' | 'page'; sizeMb?: number; page: string }>;
+      onUpdateProgress?(listener: (percent: number) => void): void;
       updateInstall(): Promise<{ ok: boolean; log: string }>;
       llmStatus(): Promise<{ servers: LlmServerStatus[]; canSave: boolean }>;
       llmConfigure(servers: LlmServerInput[]): Promise<{ ok: boolean; badServer?: number; saved: boolean }>;

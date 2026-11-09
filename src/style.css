@@ -439,6 +439,14 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .camp-crew { display: flex; align-items: center; gap: 9px; border: 1px solid var(--line); padding: 5px 9px; text-align: left; width: 100%; color: var(--ink-2); }
 .camp-crew:hover:not(:disabled) { border-color: var(--line-2); background: var(--hover); }
 .camp-crew:disabled { opacity: 0.4; }
+.crew-pic { border-radius: 50%; object-fit: cover; }
+.camp-icons { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.camp-icons-label { font-size: 13px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+.icon-pick { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); color: var(--ink-2); padding: 0; }
+.icon-pick:hover { border-color: var(--line-2); color: var(--ink); }
+.icon-pick.on { border-color: var(--accent); color: var(--accent); }
+.icon-pick .role-icon { width: 18px; height: 18px; }
+.icon-pick-plus { font-size: 18px; line-height: 1; }
 .camp-crew.on { border-color: var(--accent); }
 .camp-crew.is-wounded { opacity: 0.7; }
 .camp-crew-name { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }

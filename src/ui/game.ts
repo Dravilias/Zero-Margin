@@ -12,7 +12,7 @@ import { Board, NO_HIGHLIGHTS, type Highlights } from './board';
 import { DiceTray, type DieRequest } from './dice';
 import { clear, copyText, el } from './dom';
 import { t } from './i18n';
-import { actionIcon, roleIcon } from './icons';
+import { actionIcon, crewIcon, roleIcon } from './icons';
 import { speedFactor } from './settings';
 import type { Coach } from './tutorial';
 
@@ -987,7 +987,7 @@ export class GameView {
         else this.refresh();
       },
     },
-    roleIcon(u.role as RoleId),
+    crewIcon(u.icon, u.role as RoleId),
     el('span.unit-info', {},
       el('span.unit-name', {}, u.name),
       el('span.hp-bar', {}, el('span.hp-fill', { style: { width: `${frac * 100}%`, background: frac > 0.5 ? GREEN : frac > 0.25 ? AMBER : RED } }))),
@@ -1020,7 +1020,7 @@ export class GameView {
     const weapon = (id: string | null) => (id ? `${t(`weapon.${id}`)} ${WEAPONS[id as keyof typeof WEAPONS].dice}d6${WEAPONS[id as keyof typeof WEAPONS].bonus ? `+${WEAPONS[id as keyof typeof WEAPONS].bonus}` : ''}` : '');
     this.els.sheet.replaceChildren(
       el('div.sheet-head', { style: { '--c': FACTIONS[u.faction].color } },
-        roleIcon(u.role),
+        crewIcon(u.icon, u.role),
         el('div', {}, el('div.sheet-name', {}, u.name), el('div.sheet-role', {}, `${t(`role.${u.role}`)} · ${t(`faction.${u.faction}`)}`)),
         s.activeUnit === u.id ? el('div.ap-pips', { title: t('game.ap', { n: u.ap }) }, Array.from({ length: u.ap }, () => el('span.ap-pip'))) : null,
       ),
