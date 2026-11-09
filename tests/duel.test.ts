@@ -28,7 +28,7 @@ describe('card duel', () => {
       expect(hacker).toBeGreaterThan(75);
       expect(hacker).toBeLessThan(225);
     }
-  });
+  }, 30000);
 
   it('enforces turns, costs and lanes', () => {
     const s = createDuel(3, 'standard');

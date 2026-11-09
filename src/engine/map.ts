@@ -299,6 +299,7 @@ function openUpCover(r: Rand, g: string[], w: number, h: number, zones: Rect[], 
     const j = r.int(0, i);
     [pieces[i], pieces[j]] = [pieces[j], pieces[i]];
   }
+  const removed: number[][] = [];
   let width = narrowestPass(g, w, h, zones, target);
   while (width < target && pieces.length) {
     let chosen = pieces.length - 1;
@@ -312,13 +313,60 @@ function openUpCover(r: Rand, g: string[], w: number, h: number, zones: Rect[], 
       }
     }
     for (const k of pieces[chosen]) g[k] = '.';
-    pieces.splice(chosen, 1);
+    removed.push(...pieces.splice(chosen, 1));
     width = narrowestPass(g, w, h, zones, target);
+  }
+  // When no single piece widened the route, pieces were taken at random. Most of those blocked nothing,
+  // and taking them stripped boards of half their cover, so each one comes back unless the route needs the room.
+  if (width < target) return;
+  for (const piece of removed) {
+    for (const k of piece) g[k] = 'c';
+    if (narrowestPass(g, w, h, zones, target) < target) for (const k of piece) g[k] = '.';
   }
 }
 
 /** No board may funnel a whole crew through a gap narrower than this. */
 const MIN_PASS_WIDTH: Record<MapSize, number> = { small: 4, medium: 5, large: 6 };
+
+/** About as much cover as boards had before routes were widened, which players missed. */
+const COVER_WANTED: Record<MapSize, number> = { small: 28, medium: 42, large: 52 };
+
+/**
+ * Tops cover back up with single crates in open ground, four at a time so every player gets the same.
+ * A crate stays only if the routes stay wide, everything stays reachable, and it doesn't plug a gap.
+ */
+function addCover(
+  r: Rand, g: string[], w: number, h: number, zones: Rect[], target: number, wanted: number,
+  objectives: { x: number; y: number }[], allReachable: () => boolean,
+): void {
+  if (narrowestPass(g, w, h, zones, target) < target) return;
+  let count = g.filter((c) => c === 'c').length;
+  const free = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && canStand(g[x + y * w]);
+  const spots: [number, number][] = [];
+  for (let y = 0; y < Math.ceil(h / 2); y++) {
+    for (let x = 0; x < Math.ceil(w / 2); x++) {
+      if (g[x + y * w] !== '.') continue;
+      // Starting zones and objectives stay as they are: zones already have their own cover.
+      if (zones.some((z) => x >= z.x - 1 && x <= z.x + z.w && y >= z.y - 1 && y <= z.y + z.h)) continue;
+      if (objectives.some((o) => cheb(o.x, o.y, x, y) <= 1)) continue;
+      spots.push([x, y]);
+    }
+  }
+  for (let i = spots.length - 1; i > 0; i--) {
+    const j = r.int(0, i);
+    [spots[i], spots[j]] = [spots[j], spots[i]];
+  }
+  for (const [x, y] of spots) {
+    if (count >= wanted) return;
+    const copies = [...new Set([x + y * w, w - 1 - x + y * w, x + (h - 1 - y) * w, w - 1 - x + (h - 1 - y) * w])];
+    if (copies.some((k) => g[k] !== '.')) continue;
+    // Something to stand on both sides, in both directions, so it never closes a lane.
+    if (!(free(x - 1, y) && free(x + 1, y)) || !(free(x, y - 1) && free(x, y + 1))) continue;
+    for (const k of copies) g[k] = 'c';
+    if (narrowestPass(g, w, h, zones, target) >= target && allReachable()) count += copies.length;
+    else for (const k of copies) g[k] = '.';
+  }
+}
 
 export function generateMap(seed: number, size: MapSize, theme: ThemeId, sides: number, scenario: ScenarioId): MapData {
   const [w, h] = SIZES[size];
@@ -384,6 +432,10 @@ export function generateMap(seed: number, size: MapSize, theme: ThemeId, sides: 
     const start = zones[0];
     const sx = start.x + Math.floor(start.w / 2);
     const sy = start.y + Math.floor(start.h / 2);
+    const allReachable = (): boolean => zones.slice(1).every((z) => !!canWalkBetween(g, w, h, sx, sy, z.x + Math.floor(z.w / 2), z.y + Math.floor(z.h / 2)))
+      && terminals.every((t) => !!canWalkBetween(g, w, h, sx, sy, t.x, t.y))
+      && (!core || !!canWalkBetween(g, w, h, sx, sy, core.x, core.y));
+    addCover(r, g, w, h, zones, MIN_PASS_WIDTH[size], COVER_WANTED[size], [...terminals, ...(core ? [core] : [])], allReachable);
     let ok = g.filter((c) => c === 'c').length >= 8;
     for (const z of zones.slice(1)) {
       if (!canWalkBetween(g, w, h, sx, sy, z.x + Math.floor(z.w / 2), z.y + Math.floor(z.h / 2))) ok = false;

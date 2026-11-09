@@ -77,6 +77,31 @@ describe('maps', () => {
     }
   }, 120000);
 
+  it('keeps most of the open ground in the middle of the board next to cover', () => {
+    // Widening the routes once took away half the cover, and players noticed straight away.
+    const lowCover = (t: string) => t === 'c' || t === 'g' || t === 'T';
+    for (const size of ['small', 'medium', 'large'] as const) for (const theme of ['docks', 'market', 'plaza'] as const) {
+      let open = 0;
+      let covered = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const m = generateMap(seed * 7919, size, theme, 2, 'flatline');
+        const at = (x: number, y: number) => (x < 0 || y < 0 || x >= m.w || y >= m.h ? '#' : m.tiles[x + y * m.w]);
+        for (let y = 0; y < m.h; y++) {
+          for (let x = 0; x < m.w; x++) {
+            const t = at(x, y);
+            if (t === '#' || t === 'c' || lowCover(t)) continue;
+            if (m.zones.some((z) => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)) continue;
+            open++;
+            let near = false;
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && x + dx >= 0 && y + dy >= 0 && x + dx < m.w && y + dy < m.h && lowCover(at(x + dx, y + dy))) near = true;
+            if (near) covered++;
+          }
+        }
+      }
+      expect(covered / open, `${size} ${theme}`).toBeGreaterThan(0.55);
+    }
+  }, 120000);
+
   it('is deterministic and has a symmetric layout', () => {
     const a = generateMap(42, 'medium', 'market', 2, 'flatline');
     const b = generateMap(42, 'medium', 'market', 2, 'flatline');
