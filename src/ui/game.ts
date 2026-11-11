@@ -1,6 +1,6 @@
 import { FACTIONS, RECRUITABLE, ROLES, WEAPONS } from '../engine/data';
 import {
-  adjacentFree, chargeTile, grenadeRange, hackPreview, hackTargets, hackableTerminals, losBetween, moveOf, patchTargets,
+  ICE_STEP, adjacentFree, chargeTile, grenadeRange, hackPreview, hackTargets, hackableTerminals, losBetween, moveOf, patchTargets,
   pathTo, previewAttack, reachable, repairTargets, rulesOf, stoppable, unitById, unitOptions, type UnitOptions,
 } from '../engine/game';
 import { canStand, dist, inRect, tileAt } from '../engine/map';
@@ -546,6 +546,16 @@ export class GameView {
         this.patchUnit(e.target, { rez: e.rez });
         this.logLine(t('log.ward', { unit: this.unitName(e.target), n: e.rez }));
         break;
+      case 'traced':
+        this.patchUnit(e.unit, { traced: true });
+        this.patchUnit(e.target, { iced: e.iced });
+        this.logLine(t('log.traced', { unit: this.unitName(e.unit), target: this.unitName(e.target), n: e.iced * ICE_STEP }));
+        break;
+      case 'backlash':
+        this.patchUnit(e.unit, { hp: e.hp });
+        this.logLine(t('log.backlash', { unit: this.unitName(e.unit), by: this.unitName(e.by), n: e.dealt }), 'dmg');
+        this.refreshPanels();
+        break;
       case 'hunter':
         this.patchUnit(e.unit, { hp: e.hp });
         this.logLine(t('log.hunter', { unit: this.unitName(e.unit), n: e.dealt }), 'dmg');
@@ -1011,6 +1021,8 @@ export class GameView {
     if (u.braced) statuses.push(t('game.status.braced'));
     if (u.glitch) statuses.push(t('game.status.glitch'));
     if (u.seized) statuses.push(t('game.status.seized'));
+    if (u.traced) statuses.push(t('game.status.traced'));
+    if (u.iced) statuses.push(t('game.status.iced', { n: u.iced * ICE_STEP }));
     if (u.pinned) statuses.push(t('game.status.pinned'));
     if (u.jammed) statuses.push(t('game.status.jammed'));
     if (s.core?.carrier === u.id) statuses.push(t('game.status.carrying'));
@@ -1146,6 +1158,7 @@ export class GameView {
           box.replaceChildren(
             el('div.pv-chance', {}, `${Math.round(pv.chance * 100)}%`),
             el('div.pv-sub', {}, t('game.needRoll', { mod: pv.mod, tn: pv.tn })),
+            ...(v.iced ? [el('div.pv-sub', {}, t('game.status.iced', { n: v.iced * ICE_STEP }))] : []),
             el('div.pv-sub', {}, t(`program.${this.mode.program}.d`)),
           );
           return;

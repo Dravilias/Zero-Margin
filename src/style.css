@@ -213,6 +213,7 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .stepper button:hover:not(:disabled) { border-color: var(--line-2); color: var(--ink); }
 .stepper button:disabled { opacity: 0.35; }
 .stepper b { font: 500 13px var(--mono); color: var(--ink); min-width: 10px; text-align: center; }
+.su-stats { display: block; margin-top: 3px; font: 500 12px var(--mono); color: var(--ink-3); line-height: 1.35; }
 .su-chrome { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip-toggle { font-size: 14px; padding: 2px 7px; border: 1px solid var(--line); color: var(--ink-2); }
 .chip-toggle:hover:not(:disabled) { color: var(--ink); border-color: var(--line-2); }

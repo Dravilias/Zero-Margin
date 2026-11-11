@@ -7,7 +7,7 @@ export type RoleId = 'breaker' | 'razor' | 'longeye' | 'wire' | 'patcher' | 'wre
 export type WeaponId =
   | 'pistol' | 'smg' | 'rifle' | 'shotgun' | 'sniper' | 'dronegun'
   | 'shiv' | 'monoblade' | 'hammer' | 'claws' | 'ram';
-export type ChromeId = 'smartlink' | 'dermal' | 'spike' | 'stim' | 'dashlegs' | 'targeteye' | 'firewall' | 'claws';
+export type ChromeId = 'smartlink' | 'dermal' | 'spike' | 'stim' | 'dashlegs' | 'targeteye' | 'firewall' | 'backlash' | 'claws';
 export type AiLevel = 'easy' | 'normal' | 'hard';
 export type Control = 'human' | 'ai';
 export type GrenadeKind = 'frag' | 'smoke' | 'emp';
@@ -163,6 +163,10 @@ export interface Unit {
   net: number;
   /** Hostile programs this hacker's defences can still absorb. */
   rez: number;
+  /** Programs that landed on this unit this round. Each one makes its ICE adapt: +2 against the next hack. */
+  iced?: number;
+  /** Ran a program on someone and hasn't activated since: the trace shows where it is, so its cover counts for less. */
+  traced?: boolean;
   unstable: boolean;
   /** Who this unit really fights for, while it has snapped. */
   snapped: { side: number; team: number } | null;
@@ -270,7 +274,9 @@ export type GameEvent =
   | { t: 'recover'; unit: string; side: number; team: number }
   | { t: 'jackIn'; unit: string; net: number }
   | { t: 'ward'; target: string; rez: number }
+  | { t: 'traced'; unit: string; target: string; iced: number }
   | { t: 'hunter'; unit: string; dealt: number; hp: number }
+  | { t: 'backlash'; unit: string; by: string; dealt: number; hp: number }
   | { t: 'reinforce'; unit: Unit; left: number }
   | { t: 'gameover'; winner: number; reason: NonNullable<GameState['reason']> };
 

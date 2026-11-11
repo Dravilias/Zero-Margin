@@ -10,6 +10,12 @@ export const ACTIONS_PER_ACTIVATION = 2;
 const CRIT_MARGIN = 8;
 const HACK_RANGE = 9;
 const TERMINAL_HACK_RANGE = 6;
+/** What each program already landed this round adds to the next hack on the same target. */
+export const ICE_STEP = 2;
+/** What backlash chrome deals to a hacker who fails against it, on fixed-damage rules. */
+const BACKLASH_FIXED = 3;
+/** Shot penalties that firearms training can offset. */
+const HANDLING_PENALTIES = ['burst', 'secondAttack', 'aimedShot'];
 
 export class Illegal extends Error {}
 const illegal = (why: string): never => { throw new Illegal(why); };
@@ -303,9 +309,11 @@ export function previewAttack(s: GameState, a: Unit, t: Unit, kind: AttackKind, 
     cover = info.cover;
     addTn('range', band[1]);
     addTn(cover === 2 ? 'heavyCover' : 'lightCover', cover === 2 ? 4 : cover === 1 ? 2 : 0);
+    // A traced hacker's position is known, so its cover is worth one step less.
+    if (t.traced && cover > 0) addTn('traced', -2);
     addTn('evade', Math.floor((t.stats.quick + t.skills.evade) / 4));
     add('aimStat', a.stats.aim);
-    add('firearms', a.skills.firearms);
+    add('firearms', Math.floor(a.skills.firearms / 2));
     if (a.chrome.includes('smartlink')) add('smartlink', 1);
     if (a.faction === 'meridian') add('meridian', 1);
     if (a.injuries.includes('optics')) add('optics', -2);
@@ -314,6 +322,11 @@ export function previewAttack(s: GameState, a: Unit, t: Unit, kind: AttackKind, 
     if (o.mode === 'burst') add('burst', -1);
     if (o.reaction && a.role !== 'longeye') add('overwatch', -2);
     if (o.aimedAt) add('aimedShot', o.aimedAt === 'head' ? -4 : -2);
+    if (!o.reaction && !o.hypothetical && a.attacks > 0 && a.role !== 'breaker') add('secondAttack', -2);
+    // Aim is how well someone hits. Firearms is training: half of it helps every shot, and the rest
+    // takes the edge off awkward ones (bursts, a second shot, called shots).
+    const awkward = -mods.filter((p) => HANDLING_PENALTIES.includes(p.k)).reduce((n, p) => n + p.v, 0);
+    add('handling', Math.min(awkward, Math.ceil(a.skills.firearms / 2)));
   } else {
     if (cheb(fx, fy, tx, ty) !== 1 || diagonalBlocked(s, fx, fy, tx, ty)) return bad('notAdjacent');
     addTn('defence', 6 + t.stats.quick + t.skills.evade);
@@ -331,7 +344,7 @@ export function previewAttack(s: GameState, a: Unit, t: Unit, kind: AttackKind, 
   if (a.pinned) add('pinned', -2);
   if (a.injuries.includes('brokenArm')) add('brokenArm', -2);
   if (a.injuries.includes('concussed')) add('concussed', -1);
-  if (!o.reaction && !o.hypothetical && a.attacks > 0 && a.role !== 'breaker') add('secondAttack', -2);
+  if (kind === 'melee' && !o.reaction && !o.hypothetical && a.attacks > 0 && a.role !== 'breaker') add('secondAttack', -2);
 
   const mod = mods.reduce((n, p) => n + p.v, 0);
   const tn = tnParts.reduce((n, p) => n + p.v, 0);
@@ -580,7 +593,7 @@ export function hackPreview(s: GameState, u: Unit, program: ProgramId, targetId?
     tn = term && term.owner !== null ? 19 : 16;
   } else {
     const t = targetId ? unitById(s, targetId) : undefined;
-    tn = 14 + (t ? t.stats.wire : 0) + (t && t.chrome.includes('firewall') ? 2 : 0) + (program === 'hijack' ? 2 : 0);
+    tn = 14 + (t ? t.stats.wire + (t.iced ?? 0) * ICE_STEP : 0) + (t && t.chrome.includes('firewall') ? 2 : 0) + (program === 'hijack' ? 2 : 0);
   }
   return { chance: hitChance(rules, mod, tn), tn, mod };
 }
@@ -696,6 +709,7 @@ function startRound(s: GameState, r: Rand, ev: GameEvent[]): void {
   s.round += 1;
   for (const u of s.units) {
     if (isOk(u)) { u.activated = false; u.ap = 0; }
+    u.iced = 0;
     if (u.snapped) {
       u.side = u.snapped.side;
       u.team = u.snapped.team;
@@ -856,7 +870,7 @@ function doGrenade(s: GameState, r: Rand, ev: GameEvent[], u: Unit, kind: Grenad
   let info: RollInfo | null = null;
   let hit = true;
   if (rules.scatter) {
-    const mod = u.stats.aim + u.skills.firearms + woundPenalty(s, u);
+    const mod = u.stats.aim + Math.floor(u.skills.firearms / 2) + woundPenalty(s, u);
     const roll = rollD10(r, rules);
     hit = checkPasses(rules, roll, mod, 12);
     info = rollInfo(roll, mod, 12);
@@ -929,6 +943,17 @@ function doHack(s: GameState, r: Rand, ev: GameEvent[], u: Unit, program: Progra
   const ok = checkPasses(rules, roll, pv.mod, pv.tn);
   ev.push({ t: 'hack', unit: u.id, program, target: targetId, terminal: terminalId, roll: rollInfo(roll, pv.mod, pv.tn), ok });
   if (!ok) {
+    // Backlash chrome bites back down the line. A hacker's own defences can soak it.
+    if (target?.chrome.includes('backlash') && isOk(u)) {
+      if (u.rez > 0) {
+        u.rez -= 1;
+        ev.push({ t: 'ward', target: u.id, rez: u.rez });
+      } else {
+        const dealt = rules.fixedDamage ? BACKLASH_FIXED : r.d(6);
+        ev.push({ t: 'backlash', unit: u.id, by: target.id, dealt, hp: Math.max(0, u.hp - dealt) });
+        hurt(s, r, ev, u, dealt, target);
+      }
+    }
     // Going deep is dangerous: a badly failed run wakes something that hits the hacker directly.
     if (rules.netDive && u.role === 'wire' && roll.nat + roll.extra + pv.mod <= pv.tn - 5) {
       const dealt = rules.hitLocations ? r.d(6) + r.d(6) : r.d(6);
@@ -948,6 +973,9 @@ function doHack(s: GameState, r: Rand, ev: GameEvent[], u: Unit, program: Progra
     term.owner = u.team;
     ev.push({ t: 'capture', unit: u.id, terminal: term.id, team: u.team });
   } else if (target) {
+    target.iced = (target.iced ?? 0) + 1;
+    u.traced = true;
+    ev.push({ t: 'traced', unit: u.id, target: target.id, iced: target.iced });
     if (program === 'glitch') target.glitch = true;
     else if (program === 'seize') target.seized = true;
     else if (program === 'hijack') {
@@ -1136,6 +1164,7 @@ function dispatch(s: GameState, r: Rand, ev: GameEvent[], a: Action, side: numbe
     u.moved = false;
     u.attacks = 0;
     u.hacks = 0;
+    u.traced = false;
     u.charged = false;
     u.aiming = 0;
     u.overwatch = false;

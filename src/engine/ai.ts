@@ -1,6 +1,6 @@
 import { WEAPONS } from './data';
 import {
-  adjacentFree, capturableTerminals, chargeTile, grenadeRange, hackPreview, hackTargets, hackableTerminals, isOk,
+  adjacentFree, chargeTile, grenadeRange, hackPreview, hackTargets, hackableTerminals, isOk,
   losBetween, moveOf, patchTargets, previewAttack, reachable, repairTargets, rulesOf, stoppable, unitById, unitOptions,
 } from './game';
 import { cheb, dist, inRect, tileAt } from './map';
@@ -158,6 +158,8 @@ function hackOptions(s: GameState, u: Unit, enemies: Unit[], programs: string[],
       else if (program === 'hijack') score = pv.chance * 3;
       else if (program === 'seize') score = t.seized ? 0 : pv.chance * 1.8 * valueOf(t);
       else if (program === 'glitch') score = t.glitch || !t.ranged ? 0 : pv.chance * 1.2 * valueOf(t);
+      // A failed hack on backlash chrome hurts, so it's only worth it on good odds.
+      if (t.chrome.includes('backlash') && u.rez === 0) score -= (1 - pv.chance) * 1.5;
       if (enemies.includes(t) && score > 0) out.push({ action: { type: 'hack', program, targetId: t.id }, score });
     }
   }
@@ -274,7 +276,7 @@ export function chooseAction(s: GameState, side: number, level: AiLevel, rnd: Ra
     const [x, y] = adjacentFree(s, u)[0];
     candidates.push({ action: { type: 'drone', x, y }, score: 2 });
   }
-  for (const terminalId of capturableTerminals(s, u)) {
+  for (const terminalId of opts.capture) {
     const left = s.cfg.maxRounds - s.round + 1;
     candidates.push({ action: { type: 'capture', terminalId }, score: 2.5 + left * 0.35 });
   }

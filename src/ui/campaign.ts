@@ -1,5 +1,5 @@
 import {
-  CHROME_COST, CHROME_IDS, FACTIONS, RECRUITABLE, ROLES, WEAPONS,
+  CHROME_COST, CHROME_IDS, FACTIONS, RECRUITABLE, ROLES, RULESETS,
 } from '../engine/data';
 import {
   CREW_SYMBOLS, MAX_CHROME, advanceRoom, MAX_CREW_PICTURE, MAX_SQUAD, REST_COST, ROLE_MOVES, STAT_KEYS, THERAPY_COST, TREAT_COST, advancesFor, availableGigs, choiceAllowed, chromeCost, clinicCost, createCampaign, crewValue, effectiveThreat, enemyPoints, freeLeft,
@@ -22,6 +22,7 @@ import { getLang, t, tx } from './i18n';
 import { crewIcon, roleIcon, symbolIcon } from './icons';
 import { desktopLlm, llmReady as checkLlmReady } from './llm';
 import { saveSettings, settings } from './settings';
+import { weaponStats } from './weaponStats';
 
 /** What this file needs from the main screen code; passed in so the two don't reach into each other. */
 export interface CampaignHostScreens {
@@ -579,10 +580,9 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
         disabled: !hub || isGm() || ctl.state.cash < TREAT_COST, onclick: () => ctl.dispatch({ a: 'treat', id: m.id, injury: i }),
       }, t('camp.treat', { injury: t(`injury.${i}`), cost: cr(TREAT_COST) }))),
       el('div.opt-grid', {},
-        field(t('squad.ranged'), selectEl<string>(m.ranged ?? '', def.ranged.map((w) => weaponOption(w, m.ranged)), (v) => ctl.dispatch({ a: 'weapon', id: m.id, kind: 'ranged', weapon: (v || null) as WeaponId | null }), { disabled: !can || !hub })),
-        field(t('squad.melee'), selectEl<string>(m.melee, def.melee.map((w) => weaponOption(w, m.melee)), (v) => ctl.dispatch({ a: 'weapon', id: m.id, kind: 'melee', weapon: v as WeaponId }), { disabled: !can || !hub })),
+        el('div', {}, field(t('squad.ranged'), selectEl<string>(m.ranged ?? '', def.ranged.map((w) => weaponOption(w, m.ranged)), (v) => ctl.dispatch({ a: 'weapon', id: m.id, kind: 'ranged', weapon: (v || null) as WeaponId | null }), { disabled: !can || !hub })), el('small.su-stats', {}, weaponStats(m.ranged, RULESETS[ctl.state.ruleset]))),
+        el('div', {}, field(t('squad.melee'), selectEl<string>(m.melee, def.melee.map((w) => weaponOption(w, m.melee)), (v) => ctl.dispatch({ a: 'weapon', id: m.id, kind: 'melee', weapon: v as WeaponId }), { disabled: !can || !hub })), el('small.su-stats', {}, weaponStats(m.melee, RULESETS[ctl.state.ruleset]))),
       ),
-      m.ranged ? el('p.muted.small', {}, `${t(`weapon.${m.ranged}`)}: ${WEAPONS[m.ranged].dice}d6${WEAPONS[m.ranged].bonus ? `+${WEAPONS[m.ranged].bonus}` : ''}`) : null,
       el('h3', {}, t('camp.chrome', { n: m.chrome.length, max: MAX_CHROME })),
       el('div.su-chrome', {}, CHROME_IDS.map((c: ChromeId) => el('button.chip-toggle', {
         class: m.chrome.includes(c) ? 'on' : '', title: t(`chrome.${c}.d`), disabled: !can || !hub || (!m.chrome.includes(c) && (m.chrome.length >= MAX_CHROME || (!spare(c) && ctl.state.cash < chromeCost(c)))),

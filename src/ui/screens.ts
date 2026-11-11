@@ -14,6 +14,7 @@ import {
   type Seat, type SeatKind,
 } from '../net/table';
 import { sfx } from './audio';
+import { weaponStats } from './weaponStats';
 import { playMusic, setMusicVolume } from './music';
 import { campaignHome, initCampaignScreens, joinCampaign } from './campaign';
 import { clear, copyText, el, loadingPage, selectEl } from './dom';
@@ -752,8 +753,8 @@ function squadDialog(ctl: TableController, seat: Seat, index: number, mine: bool
           el('button.btn-quiet', { onclick: () => { roster.splice(i, 1); render(); } }, t('squad.remove')),
         ),
         el('div.su-gear', {},
-          field(t('squad.ranged'), gun),
-          field(t('squad.melee'), blade),
+          el('div', {}, field(t('squad.ranged'), gun), el('small.su-stats', {}, weaponStats(l.ranged, rules))),
+          el('div', {}, field(t('squad.melee'), blade), el('small.su-stats', {}, weaponStats(l.melee, rules))),
           el('div.field', {}, el('span', {}, t('squad.grenades')), el('div.steppers', {}, grenadeKinds.map(stepper))),
         ),
         el('div.su-chrome', {}, CHROME_IDS.map((c) => el('button.chip-toggle', {

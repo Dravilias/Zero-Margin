@@ -77,25 +77,25 @@ const stats = (quick: number, aim: number, grit: number, wire: number, nerve: nu
 const noGrenades: Grenades = { frag: 0, smoke: 0, emp: 0 };
 
 export const ROLES: Record<RoleId, RoleDef> = {
-  breaker: { id: 'breaker', cost: 20, stats: stats(5, 6, 5, 2, 5), skills: skills(4, 2, 2), armor: 3, armorHead: 1, ranged: ['rifle', 'smg', 'shotgun', 'pistol'], melee: ['shiv', 'hammer'], grenades: noGrenades, kits: 0, drones: 0 },
-  razor: { id: 'razor', cost: 20, stats: stats(7, 3, 6, 2, 6), skills: skills(1, 5, 4), armor: 2, armorHead: 1, ranged: [null, 'pistol'], melee: ['monoblade', 'hammer', 'shiv'], grenades: noGrenades, kits: 0, drones: 0 },
-  longeye: { id: 'longeye', cost: 22, stats: stats(4, 7, 3, 3, 5), skills: skills(5, 1, 2), armor: 1, armorHead: 0, ranged: ['sniper', 'rifle'], melee: ['shiv'], grenades: noGrenades, kits: 0, drones: 0 },
-  wire: { id: 'wire', cost: 22, stats: stats(4, 4, 3, 7, 5), skills: skills(2, 1, 2, 6), armor: 1, armorHead: 0, ranged: ['pistol', 'smg'], melee: ['shiv'], grenades: noGrenades, kits: 0, drones: 0 },
-  patcher: { id: 'patcher', cost: 18, stats: stats(5, 5, 4, 4, 6), skills: skills(3, 2, 3, 0, 6), armor: 1, armorHead: 1, ranged: ['pistol', 'smg'], melee: ['shiv'], grenades: { frag: 0, smoke: 1, emp: 0 }, kits: 4, drones: 0 },
-  wrench: { id: 'wrench', cost: 20, stats: stats(4, 5, 5, 5, 5), skills: skills(3, 2, 2, 2, 0, 6), armor: 2, armorHead: 1, ranged: ['pistol', 'smg', 'shotgun'], melee: ['shiv', 'hammer'], grenades: noGrenades, kits: 0, drones: 1 },
-  sapper: { id: 'sapper', cost: 20, stats: stats(5, 5, 5, 2, 4), skills: skills(4, 2, 2), armor: 2, armorHead: 1, ranged: ['shotgun', 'smg', 'pistol'], melee: ['shiv'], grenades: { frag: 3, smoke: 1, emp: 0 }, kits: 0, drones: 0 },
-  punk: { id: 'punk', cost: 9, stats: stats(5, 4, 4, 1, 4), skills: skills(3, 3, 2), armor: 0, armorHead: 0, ranged: ['pistol', 'smg', null], melee: ['shiv', 'hammer'], grenades: noGrenades, kits: 0, drones: 0 },
-  broker: { id: 'broker', cost: 14, stats: stats(5, 4, 4, 4, 7), skills: skills(2, 1, 3), armor: 1, armorHead: 0, ranged: ['pistol', 'smg'], melee: ['shiv'], grenades: { frag: 0, smoke: 1, emp: 0 }, kits: 0, drones: 0 },
-  face: { id: 'face', cost: 14, stats: stats(5, 4, 3, 3, 8), skills: skills(2, 1, 4), armor: 0, armorHead: 0, ranged: ['pistol'], melee: ['shiv'], grenades: noGrenades, kits: 0, drones: 0 },
-  suit: { id: 'suit', cost: 14, stats: stats(4, 4, 4, 5, 6), skills: skills(2, 1, 2), armor: 2, armorHead: 0, ranged: ['pistol', 'smg'], melee: ['shiv'], grenades: noGrenades, kits: 0, drones: 0 },
-  drone: { id: 'drone', cost: 0, stats: stats(6, 5, 2, 1, 10), skills: skills(3, 0, 3), armor: 2, armorHead: 2, ranged: ['dronegun'], melee: ['ram'], grenades: noGrenades, kits: 0, drones: 0 },
+  breaker: { id: 'breaker', cost: 20, stats: stats(5, 8, 5, 2, 5), skills: skills(4, 2, 2), armor: 3, armorHead: 1, ranged: ['rifle', 'smg', 'shotgun', 'pistol'], melee: ['shiv', 'hammer'], grenades: noGrenades, kits: 0, drones: 0 },
+  razor: { id: 'razor', cost: 20, stats: stats(7, 4, 6, 2, 6), skills: skills(1, 5, 4), armor: 2, armorHead: 1, ranged: [null, 'pistol'], melee: ['monoblade', 'hammer', 'shiv'], grenades: noGrenades, kits: 0, drones: 0 },
+  longeye: { id: 'longeye', cost: 22, stats: stats(4, 10, 3, 3, 5), skills: skills(5, 1, 2), armor: 1, armorHead: 0, ranged: ['sniper', 'rifle'], melee: ['shiv'], grenades: noGrenades, kits: 0, drones: 0 },
+  wire: { id: 'wire', cost: 22, stats: stats(4, 5, 3, 7, 5), skills: skills(2, 1, 2, 6), armor: 1, armorHead: 0, ranged: ['pistol', 'smg'], melee: ['shiv'], grenades: noGrenades, kits: 0, drones: 0 },
+  patcher: { id: 'patcher', cost: 18, stats: stats(5, 7, 4, 4, 6), skills: skills(3, 2, 3, 0, 6), armor: 1, armorHead: 1, ranged: ['pistol', 'smg'], melee: ['shiv'], grenades: { frag: 0, smoke: 1, emp: 0 }, kits: 4, drones: 0 },
+  wrench: { id: 'wrench', cost: 20, stats: stats(4, 7, 5, 5, 5), skills: skills(3, 2, 2, 2, 0, 6), armor: 2, armorHead: 1, ranged: ['pistol', 'smg', 'shotgun'], melee: ['shiv', 'hammer'], grenades: noGrenades, kits: 0, drones: 1 },
+  sapper: { id: 'sapper', cost: 20, stats: stats(5, 7, 5, 2, 4), skills: skills(4, 2, 2), armor: 2, armorHead: 1, ranged: ['shotgun', 'smg', 'pistol'], melee: ['shiv'], grenades: { frag: 3, smoke: 1, emp: 0 }, kits: 0, drones: 0 },
+  punk: { id: 'punk', cost: 9, stats: stats(5, 6, 4, 1, 4), skills: skills(3, 3, 2), armor: 0, armorHead: 0, ranged: ['pistol', 'smg', null], melee: ['shiv', 'hammer'], grenades: noGrenades, kits: 0, drones: 0 },
+  broker: { id: 'broker', cost: 14, stats: stats(5, 5, 4, 4, 7), skills: skills(2, 1, 3), armor: 1, armorHead: 0, ranged: ['pistol', 'smg'], melee: ['shiv'], grenades: { frag: 0, smoke: 1, emp: 0 }, kits: 0, drones: 0 },
+  face: { id: 'face', cost: 14, stats: stats(5, 5, 3, 3, 8), skills: skills(2, 1, 4), armor: 0, armorHead: 0, ranged: ['pistol'], melee: ['shiv'], grenades: noGrenades, kits: 0, drones: 0 },
+  suit: { id: 'suit', cost: 14, stats: stats(4, 5, 4, 5, 6), skills: skills(2, 1, 2), armor: 2, armorHead: 0, ranged: ['pistol', 'smg'], melee: ['shiv'], grenades: noGrenades, kits: 0, drones: 0 },
+  drone: { id: 'drone', cost: 0, stats: stats(6, 7, 2, 1, 10), skills: skills(3, 0, 3), armor: 2, armorHead: 2, ranged: ['dronegun'], melee: ['ram'], grenades: noGrenades, kits: 0, drones: 0 },
 };
 
 /** Roles a player can recruit; drones only arrive through a Wrench. */
 export const RECRUITABLE: RoleId[] = ['breaker', 'razor', 'longeye', 'wire', 'patcher', 'wrench', 'sapper', 'punk', 'broker', 'face', 'suit'];
 
 export const CHROME_COST: Record<ChromeId, number> = {
-  smartlink: 4, dermal: 5, spike: 5, stim: 3, dashlegs: 4, targeteye: 3, firewall: 3, claws: 3,
+  smartlink: 4, dermal: 5, spike: 5, stim: 3, dashlegs: 4, targeteye: 3, firewall: 3, backlash: 4, claws: 3,
 };
 export const CHROME_IDS = Object.keys(CHROME_COST) as ChromeId[];
 export const GRENADE_COST: Record<keyof Grenades, number> = { frag: 3, smoke: 2, emp: 3 };
