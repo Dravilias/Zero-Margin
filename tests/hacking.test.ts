@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ROLES, makeLoadout } from '../src/engine/data';
-import { ICE_STEP, applyAction, createGame, hackPreview, hackTargets, previewAttack, unitById } from '../src/engine/game';
+import { ICE_STEP, applyAction, createGame, hackPreview, hackTargets, moveOf, previewAttack, unitById } from '../src/engine/game';
 import type { GameConfig, GameState, MapData } from '../src/engine/types';
 
 // A wall in the middle, with low cover in front of the hacker's corner.
@@ -109,6 +109,31 @@ describe('backlash loop', () => {
     const r = failedHack(1);
     expect(r.events.some((e) => e.t === 'backlash')).toBe(false);
     expect(unitById(r.state, WIRE)!.rez).toBe(0);
+  });
+});
+
+describe('faction objective rules', () => {
+  it('lets Meridian take the data core without spending an action', () => {
+    for (const faction of ['meridian', 'union'] as const) {
+      const s = game();
+      const u = unitById(s, WIRE)!;
+      u.faction = faction;
+      s.core = { x: u.x + 1, y: u.y, carrier: null };
+      let r = applyAction(s, { type: 'select', unitId: WIRE }, 0);
+      const ap = unitById(r.state, WIRE)!.ap;
+      r = applyAction(r.state, { type: 'grab' }, 0);
+      expect(r.ok, r.error).toBe(true);
+      expect(unitById(r.state, WIRE)!.ap).toBe(faction === 'meridian' ? ap : ap - 1);
+    }
+  });
+
+  it('slows Kilnrats more than others while they carry the core', () => {
+    const s = game();
+    const u = unitById(s, WIRE)!;
+    s.core = { x: u.x, y: u.y, carrier: u.id };
+    const normal = moveOf(s, u);
+    u.faction = 'kilnrats';
+    expect(moveOf(s, u)).toBe(normal - 1);
   });
 });
 

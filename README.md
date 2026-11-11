@@ -197,7 +197,7 @@ Setting `ZM_SMOKE_TEST=1` makes the desktop app run a check using a throwaway pr
 
 ## Known limitations
 
-- **Balance:** faction win rates vary widely by scenario and rule depth, and campaign prices and difficulty are estimates.
+- **Balance:** on Standard and Full Contract, factions win between about 35% and 63% of computer-played games. On Quick Job, Harbor Union and the Kilnrats still win far more often than Meridian and the Choir. Campaign prices and difficulty are estimates.
 - **Language models:** one real server has been tried, on the first chapter of a story in English. Later chapters, endings, Polish output and narration in online games have only been tested against simulated responses.
 - **Windows:** the build has only been tested in a virtual machine, not on physical hardware.
 - **Online play:** the game hasn't been tested with players on separate home networks.

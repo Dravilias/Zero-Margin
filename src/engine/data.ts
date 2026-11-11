@@ -142,19 +142,21 @@ const SQUAD_ORDER: Record<FactionId, Loadout[]> = {
   meridian: [
     makeLoadout('breaker', 'rifle', 'shiv', ['smartlink']),
     makeLoadout('wire', 'smg', 'shiv', ['firewall']),
-    makeLoadout('longeye', 'sniper', 'shiv'),
     makeLoadout('punk', 'smg', 'shiv'),
+    makeLoadout('punk', 'smg', 'shiv'),
+    makeLoadout('punk', 'smg', 'shiv'),
+    makeLoadout('longeye', 'sniper', 'shiv'),
     makeLoadout('breaker', 'rifle', 'shiv'),
     makeLoadout('wrench', 'smg', 'shiv'),
     makeLoadout('patcher', 'smg', 'shiv'),
   ],
   choir: [
     makeLoadout('razor', 'pistol', 'monoblade'),
-    makeLoadout('razor', null, 'hammer', ['dermal']),
     makeLoadout('wire', 'pistol', 'shiv', ['firewall']),
     makeLoadout('punk', 'pistol', 'shiv', ['claws']),
     makeLoadout('punk', 'smg', 'shiv'),
     makeLoadout('patcher', 'pistol', 'shiv', ['stim']),
+    makeLoadout('razor', null, 'hammer', ['dermal']),
     makeLoadout('breaker', 'smg', 'shiv', ['claws']),
   ],
   kilnrats: [

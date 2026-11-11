@@ -44,7 +44,9 @@ function makeUnit(cfg: GameConfig, side: number, l: Loadout, index: number): Uni
   if (rules.chromeLoad) stats.nerve = Math.max(1, stats.nerve - Math.max(0, l.chrome.length - 2));
   const melee = l.chrome.includes('claws') && l.melee === 'shiv' ? 'claws' : l.melee;
   const rank = l.rank ?? 1;
-  const hpMax = l.role === 'drone' ? 12 : 10 + stats.grit * 2 + (sc.faction === 'choir' ? 2 : 0) + (l.bonus?.hp ?? 0);
+  // The Choir shrug off wounds. Where the rules have no wounds to shrug off, they're simply tougher instead.
+  const choirHp = sc.faction !== 'choir' ? 0 : rules.wounds ? 2 : 4;
+  const hpMax = l.role === 'drone' ? 12 : 10 + stats.grit * 2 + choirHp + (l.bonus?.hp ?? 0);
   const grenades = {
     frag: role.grenades.frag + l.extra.frag,
     smoke: role.grenades.smoke + l.extra.smoke,
@@ -133,9 +135,16 @@ export function moveOf(s: GameState, u: Unit): number {
   let m = u.move;
   if (u.injuries.includes('brokenLeg')) m -= 2;
   // Badly hurt people don't run.
-  if (rulesOf(s).wounds && !u.isDrone && u.faction !== 'choir' && u.hp * 4 <= u.hpMax) m -= 2;
-  if (s.core && s.core.carrier === u.id) m -= 1;
+  if (rulesOf(s).wounds && !u.isDrone && u.hp * 4 <= u.hpMax) m -= u.faction === 'choir' ? 1 : 2;
+  // The core is heavy, and the Kilnrats' kids feel it most: it costs them their speed.
+  if (s.core && s.core.carrier === u.id) m -= u.faction === 'kilnrats' ? 2 : 1;
   return Math.max(1, m);
+}
+
+/** Meridian is Asset Control: taking a terminal or the core costs them no action, though they need one left. */
+function objectiveAction(u: Unit): void {
+  if (u.ap < 1) illegal('noAp');
+  if (u.faction !== 'meridian') u.ap -= 1;
 }
 
 const blockingUnit = (s: GameState, x: number, y: number): Unit | undefined =>
@@ -1298,14 +1307,14 @@ function dispatch(s: GameState, r: Rand, ev: GameEvent[], a: Action, side: numbe
     case 'drone': spend(u); doDrone(s, ev, u, a.x, a.y); break;
     case 'capture': {
       if (!capturableTerminals(s, u).includes(a.terminalId)) illegal('badTarget');
-      spend(u);
+      objectiveAction(u);
       s.terminals.find((t) => t.id === a.terminalId)!.owner = u.team;
       ev.push({ t: 'capture', unit: u.id, terminal: a.terminalId, team: u.team });
       break;
     }
     case 'grab': {
       if (!unitOptions(s, u).grab) illegal('cannotGrab');
-      spend(u);
+      objectiveAction(u);
       s.core!.carrier = u.id;
       s.core!.x = u.x;
       s.core!.y = u.y;
