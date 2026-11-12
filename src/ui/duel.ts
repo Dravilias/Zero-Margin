@@ -7,6 +7,7 @@ import { RULESET_OPTIONS, randomSeed } from '../net/table';
 import { sfx } from './audio';
 import { copyText, el, loadingPage } from './dom';
 import { t, tx } from './i18n';
+import { linkBadge } from './linkBadge';
 import { settings } from './settings';
 
 export interface DuelScreens {
@@ -168,6 +169,7 @@ function run(ctl: DuelController, lesson = false): void {
           el('div.camp-stat', {}, el('span', {}, t('duel.bandwidth')), el('b', {}, player.bandwidth)),
         ),
         ctl.code ? el('button.code-chip', { onclick: () => copyText(ctl.code!) }, ctl.code) : null,
+        ctl.code ? linkBadge() : null,
       ),
       lesson ? lessonCard(duelTip(s, chosenId ?? null)) : null,
       el('div.duel-board', {}, s.lanes.map((l, i) => el('section.duel-lane', {

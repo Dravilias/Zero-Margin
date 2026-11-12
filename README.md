@@ -133,7 +133,26 @@ Scene text and crew names are sent to the chosen servers, so each provider's ter
 
 The host's PC runs the rules, and other players send it their moves. A small relay server connects players by join code. It passes messages between them and doesn't store them on disk or log their contents.
 
-The game uses a default relay address, which can be changed in Settings. Everyone at a table needs the same address and the same game version. A self-hosted relay runs with:
+The game uses a default relay address, which can be changed in Settings. Everyone at a table needs the same address and the same game version.
+
+### Direct connections
+
+With **Direct connection to other players** turned on in Settings, the host and a guest connect straight to each other once the relay has introduced them. The link is a WebRTC data channel, encrypted end to end, and the game's messages stop passing through the relay. It's off by default, because a direct link shows the two players each other's IP address, and it's only made when both of them have turned it on. A label next to the join code says whether the game is running over a direct link or through the relay.
+
+What keeps it safe:
+
+- **Addresses:** the desktop app only ever offers the address the internet already sees, so a VPN's address is offered in place of the real one, and home-network addresses are neither sent nor accepted. A link can't be pointed at devices inside someone's network.
+- **Untrusted input:** everything arriving over a link is checked for format, order, size and rate before the game sees it, and then goes through the same checks as a message from the relay. One bad frame closes that player's link for the rest of the session.
+- **No lost moves:** every message is numbered and kept until the other side confirms it. If a link dies, the unconfirmed ones go through the relay, and nothing arrives twice or out of order.
+- **Fallback:** if a link can't be made, which happens behind some routers and on mobile networks, the game stays on the relay as before.
+
+To find its own public address the game asks a STUN server, by default Cloudflare's. That server sees the player's IP address and nothing about the game. The address can be changed or left empty in Settings.
+
+The relay is still needed for join codes and introductions, and it is trusted for those, as it always was: a dishonest relay could put itself between two players. A table also still closes when the relay restarts.
+
+### Running a relay
+
+A self-hosted relay runs with:
 
 ```bash
 cd relay
@@ -177,7 +196,7 @@ Setting `ZM_UPDATE_FEED` to a URL of a file shaped like GitHub's latest-release 
 | Path | Purpose |
 | --- | --- |
 | `src/engine/` | Rules for all three modes, as pure functions with no interface code |
-| `src/net/` | Relay client, local and online sessions, saves and the game master prompts |
+| `src/net/` | Relay client, direct links between players, local and online sessions, saves and the game master prompts |
 | `src/ui/` | Screens, board and dice rendering, synthesized sound and translations |
 | `electron/` | The desktop app, including model server calls, key storage and updates |
 | `relay/` | The join-code relay, a small Node server packaged for Docker |
@@ -200,7 +219,7 @@ Setting `ZM_SMOKE_TEST=1` makes the desktop app run a check using a throwaway pr
 - **Balance:** on Standard and Full Contract, factions win between about 35% and 63% of computer-played games. On Quick Job, Harbor Union and the Kilnrats still win far more often than Meridian and the Choir. Campaign prices and difficulty are estimates.
 - **Language models:** one real server has been tried, on the first chapter of a story in English. Later chapters, endings, Polish output and narration in online games have only been tested against simulated responses.
 - **Windows:** the build has only been tested in a virtual machine, not on physical hardware.
-- **Online play:** the game hasn't been tested with players on separate home networks.
+- **Online play:** the game hasn't been tested with players on separate home networks. Direct connections have only been tried between two copies on one PC, never across the internet, and the VPN behavior comes from Chromium's documented setting, not from a test.
 - **Card duel:** online players receive the full game state, so a modified client could see the opponent's hand.
 - **Tutorial:** the lessons cover Quick Job and Standard Contract skirmish and a Quick Job card duel as the hacker. Full Contract rules, scenario objectives and the corporation's side of the duel have no lesson, and the campaign has tips and a guide instead of a played one.
 

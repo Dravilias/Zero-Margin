@@ -21,6 +21,7 @@ import type { GameView } from './game';
 import { getLang, t, tx } from './i18n';
 import { crewIcon, roleIcon, symbolIcon } from './icons';
 import { desktopLlm, llmReady as checkLlmReady } from './llm';
+import { linkBadge } from './linkBadge';
 import { saveSettings, settings } from './settings';
 import { weaponStats } from './weaponStats';
 
@@ -395,6 +396,7 @@ function run(ctl: CampaignController, firstNote: string | null = null): void {
       ctl.code ? el('div.code-box', {},
         el('span.code-label', {}, t('table.code')),
         el('button.code-big', { title: t('common.copy'), onclick: (e: Event) => { copyText(ctl.code!); (e.currentTarget as HTMLElement).classList.add('copied'); } }, ctl.code),
+        linkBadge(),
       ) : null,
     );
   };

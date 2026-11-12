@@ -14,6 +14,7 @@ import { clear, copyText, el } from './dom';
 import { t } from './i18n';
 import { actionIcon, crewIcon, roleIcon } from './icons';
 import { speedFactor } from './settings';
+import { linkBadge } from './linkBadge';
 import type { GameCoach } from './tutorial';
 
 type Mode =
@@ -929,12 +930,14 @@ export class GameView {
         this.toast(t('common.copied'));
       },
     }, this.session.code) : null;
+    const direct = this.session.code ? linkBadge() : null;
     this.els.top.replaceChildren(
       el('div.top-title', {}, t('app.title')),
       el('div.top-round', {}, round),
       el('div.top-scenario', {}, `${t(`scenario.${s.cfg.scenario}`)} · ${t(`ruleset.${s.cfg.ruleset}`)}`),
       el('div.scores', {}, scores),
       ...(code ? [code] : []),
+      ...(direct ? [direct] : []),
       el('button.btn-quiet', { onclick: () => this.leaveDialog() }, t('game.menu')),
     );
   }

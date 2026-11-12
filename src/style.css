@@ -246,6 +246,9 @@ input[type='range'] { padding: 0; accent-color: var(--accent); border: 0; }
 .score { display: flex; align-items: baseline; gap: 7px; }
 .score-name { font-size: 14px; color: var(--ink-2); max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .score-num { font: 500 15px var(--mono); color: var(--c); }
+.link-badge { font: 500 11.5px var(--mono); letter-spacing: 0.06em; color: var(--ink-3); border: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; }
+.code-box .link-badge { grid-row: 3; grid-column: 1; justify-self: start; margin-top: 4px; }
+.link-badge.on { color: #7fd6a0; border-color: rgba(127, 214, 160, 0.45); }
 .code-chip { font: 500 13px var(--mono); letter-spacing: 0.1em; color: var(--ink-2); border: 1px solid var(--line); padding: 2px 7px; }
 .topbar .btn-quiet { padding: 4px 10px; font-size: 13px; }
 

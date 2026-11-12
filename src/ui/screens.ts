@@ -15,6 +15,8 @@ import {
 } from '../net/table';
 import { sfx } from './audio';
 import { weaponStats } from './weaponStats';
+import { linkBadge } from './linkBadge';
+import { stunOk } from '../net/rtc';
 import { playMusic, setMusicVolume } from './music';
 import { campaignHome, initCampaignScreens, joinCampaign } from './campaign';
 import { clear, copyText, el, loadingPage, selectEl } from './dom';
@@ -23,7 +25,7 @@ import { GameView } from './game';
 import { getLang, t, type Lang } from './i18n';
 import { roleIcon } from './icons';
 import { llmStatus, type LlmServerInput } from './llm';
-import { DEFAULT_RELAY, saveSettings, settings } from './settings';
+import { DEFAULT_RELAY, DEFAULT_STUN, saveSettings, settings } from './settings';
 import { Coach, PracticeCoach, TutorialSession } from './tutorial';
 
 let root: HTMLElement;
@@ -580,6 +582,7 @@ function tableScreen(ctl: TableController): void {
               (e.currentTarget as HTMLElement).classList.add('copied');
             },
           }, tb.code),
+          linkBadge(),
           el('span.code-hint', {}, t('table.codeHint')),
         ) : null,
       ),
@@ -828,6 +831,18 @@ function settingsScreen(): void {
     field(t('settings.rain'), selectEl(settings.rain ? 'on' : 'off', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], (v) => { settings.rain = v === 'on'; saveSettings(); })),
     field(t('settings.relay'), relay),
     el('p.muted.small', {}, t('settings.relayHint')),
+    field(t('settings.direct'), selectEl(settings.direct ? 'on' : 'off', [{ value: 'off', label: t('settings.off') }, { value: 'on', label: t('settings.on') }], (v) => { settings.direct = v === 'on'; saveSettings(); settingsScreen(); })),
+    el('p.muted.small', {}, t('settings.directHint')),
+    settings.direct ? field(t('settings.stun'), el('input', {
+      value: settings.stun, spellcheck: 'false', placeholder: DEFAULT_STUN,
+      onchange: (e: Event) => {
+        const v = (e.target as HTMLInputElement).value.trim();
+        if (v === '' || stunOk(v)) settings.stun = v;
+        (e.target as HTMLInputElement).value = settings.stun;
+        saveSettings();
+      },
+    })) : null,
+    settings.direct ? el('p.muted.small', {}, t('settings.stunHint')) : null,
     gmSettings(),
   )));
 }

@@ -33,6 +33,9 @@ function createWindow(): BrowserWindow {
     },
   });
   Menu.setApplicationMenu(null);
+  // Direct links between players only ever offer the address the internet already sees: the VPN's
+  // if there is one, and never the addresses of the home network.
+  win.webContents.setWebRTCIPHandlingPolicy('default_public_interface_only');
   void win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 
   // The game has no external links; anything that tries to open one goes to the system browser.
