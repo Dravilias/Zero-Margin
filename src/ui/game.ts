@@ -9,11 +9,14 @@ import { GuestSession, type GameSession, type GameUpdate } from '../net/sessions
 import { sfx } from './audio';
 import { playMusic } from './music';
 import { Board, NO_HIGHLIGHTS, type Highlights } from './board';
+import { Board3D } from './board3d/board3d';
+import { wants3d } from './board3d/support';
+import type { BoardView } from './boardView';
 import { DiceTray, type DieRequest } from './dice';
 import { clear, copyText, el } from './dom';
 import { t } from './i18n';
 import { actionIcon, crewIcon, roleIcon } from './icons';
-import { speedFactor } from './settings';
+import { settings, speedFactor } from './settings';
 import { linkBadge } from './linkBadge';
 import type { GameCoach } from './tutorial';
 
@@ -59,7 +62,8 @@ export class GameView {
   private aimedAt: HitLoc | null = null;
   private meleePref = false;
   private hoverTile: { x: number; y: number } | null = null;
-  private board!: Board;
+  private board!: BoardView;
+  private boardWrap!: HTMLElement;
   private dice!: DiceTray;
   private els: Record<string, HTMLElement> = {};
   private overShown = false;
@@ -166,14 +170,42 @@ export class GameView {
       this.els.banner,
     );
     this.root.append(game);
-    this.board = new Board(boardWrap);
+    this.boardWrap = boardWrap;
+    this.board = this.makeBoard();
     this.dice = new DiceTray(diceWrap);
-    this.board.onTileClick = (x, y) => this.onTile(x, y);
-    this.board.onTileHover = (x, y) => this.onHover(x, y);
     this.layoutBoard(game);
     this.layoutObserver = new ResizeObserver(() => this.layoutBoard(game));
     this.layoutObserver.observe(game);
     void s;
+  }
+
+  /** The 3D board where the settings and this PC allow it, otherwise the flat one. */
+  private makeBoard(flat = false): BoardView {
+    let board: BoardView | null = null;
+    if (!flat && wants3d(settings.board)) {
+      try {
+        board = new Board3D(this.boardWrap, settings.quality);
+      } catch (err) {
+        console.error('Could not start the 3D board', err);
+      }
+    }
+    board ??= new Board(this.boardWrap);
+    board.onTileClick = (x, y) => this.onTile(x, y);
+    board.onTileHover = (x, y) => this.onHover(x, y);
+    board.onFail = () => this.useFlatBoard();
+    return board;
+  }
+
+  /** The 3D board stopped working: carry on with the flat one, without interrupting the game. */
+  private useFlatBoard(): void {
+    if (this.disposed) return;
+    this.board.destroy();
+    this.board = this.makeBoard(true);
+    this.board.setState(this.display);
+    this.layoutBoard(this.boardWrap.parentElement!);
+    this.board.setSelection(this.selected, this.display.activeUnit);
+    this.board.setHighlights(this.highlights());
+    this.toast(t('board.fallback'));
   }
 
   /** Fits the board into the space the HUD leaves free; the city carries on behind the panels. */

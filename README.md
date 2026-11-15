@@ -72,6 +72,21 @@ To check, the game asks GitHub each time the menu opens. The check can be turned
 - Computer players on easy, normal and hard, able to fill any seat
 - Up to 4 players, with autosave and resume
 
+### The board
+
+Battles are shown on a 3D city by default: towers, neon, street lamps and rain, built from the same map the rules use. Each district looks different. The docks are low sheds, container yards and cranes over the harbour, the night market is dense apartment blocks with lights strung across the streets, and the plaza is tall glass towers. Q and E turn the view, the mouse wheel zooms and a right-drag moves it.
+
+Buildings never hide a figure. Anything between the camera and the board is cut down, and walls on the board leave a see-through gap in front of every figure.
+
+Settings has two options for it:
+
+| Setting | Choices |
+| --- | --- |
+| **Battle board** | **Automatic** uses 3D on a PC with graphics acceleration and the flat board otherwise. **3D** and **Flat (2D)** force one or the other. |
+| **3D quality** | **High**, or **Low**, which turns off shadows, glow and most of the street lights. |
+
+If the 3D board stops working mid-battle, the battle carries on on the flat board.
+
 ### Story campaign
 
 Money, gear, chrome, levels and injuries carry over from job to job. A campaign can be played alone, on one PC, or online with up to 4 players, each running their own characters. Up to 8 campaigns can be saved at once.
@@ -197,7 +212,7 @@ Setting `ZM_UPDATE_FEED` to a URL of a file shaped like GitHub's latest-release 
 | --- | --- |
 | `src/engine/` | Rules for all three modes, as pure functions with no interface code |
 | `src/net/` | Relay client, direct links between players, local and online sessions, saves and the game master prompts |
-| `src/ui/` | Screens, board and dice rendering, synthesized sound and translations |
+| `src/ui/` | Screens, the flat and 3D boards, dice rendering, synthesized sound and translations |
 | `electron/` | The desktop app, including model server calls, key storage and updates |
 | `relay/` | The join-code relay, a small Node server packaged for Docker |
 | `tests/` | Rules, computer players, online play, translations and the lessons |
@@ -219,6 +234,7 @@ Setting `ZM_SMOKE_TEST=1` makes the desktop app run a check using a throwaway pr
 - **Balance:** on Standard and Full Contract, factions win between about 35% and 63% of computer-played games. On Quick Job, Harbor Union and the Kilnrats still win far more often than Meridian and the Choir. Campaign prices and difficulty are estimates.
 - **Language models:** one real server has been tried, on the first chapter of a story in English. Later chapters, endings, Polish output and narration in online games have only been tested against simulated responses.
 - **Windows:** the build has only been tested in a virtual machine, not on physical hardware.
+- **3D board:** it has only been tried on one PC, with integrated AMD graphics, where it runs at 60 frames per second. Weaker graphics cards and Windows haven't been tried. A PC without graphics acceleration, like the Windows virtual machine, gets the flat board automatically.
 - **Online play:** the game hasn't been tested with players on separate home networks. Direct connections have only been tried between two copies on one PC, never across the internet, and the VPN behavior comes from Chromium's documented setting, not from a test.
 - **Card duel:** online players receive the full game state, so a modified client could see the opponent's hand.
 - **Tutorial:** the lessons cover Quick Job and Standard Contract skirmish and a Quick Job card duel as the hacker. Full Contract rules, scenario objectives and the corporation's side of the duel have no lesson, and the campaign has tips and a guide instead of a played one.

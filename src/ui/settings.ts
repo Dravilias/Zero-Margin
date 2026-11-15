@@ -22,6 +22,10 @@ export interface Settings {
   direct: boolean;
   /** Where the game asks for its own public address, which a direct link needs. Empty for none. */
   stun: string;
+  /** Which board battles use. Auto means 3D on a PC with graphics acceleration, flat otherwise. */
+  board: 'auto' | '3d' | '2d';
+  /** Low drops shadows, glow and most street lights, for weaker graphics. */
+  quality: 'high' | 'low';
 }
 
 export const DEFAULT_STUN = 'stun:stun.cloudflare.com:3478';
@@ -35,7 +39,7 @@ function systemLang(): Lang {
 
 const defaults = (): Settings => ({
   lang: systemLang(), name: '', volume: 0.6, music: 0.5, speed: 'normal', rain: true, relayUrl: DEFAULT_RELAY, tutorialDone: false,
-  gmEnabled: true, checkUpdates: true, tipsSeen: [], direct: false, stun: DEFAULT_STUN,
+  gmEnabled: true, checkUpdates: true, tipsSeen: [], direct: false, stun: DEFAULT_STUN, board: 'auto', quality: 'high',
 });
 
 export const settings: Settings = defaults();
@@ -54,6 +58,8 @@ function clean(raw: unknown): Partial<Settings> {
   if (r.speed === 'slow' || r.speed === 'normal' || r.speed === 'fast') out.speed = r.speed;
   if (typeof r.relayUrl === 'string' && /^wss?:\/\//.test(r.relayUrl)) out.relayUrl = r.relayUrl;
   if (typeof r.stun === 'string' && (r.stun === '' || stunOk(r.stun))) out.stun = r.stun;
+  if (r.board === 'auto' || r.board === '3d' || r.board === '2d') out.board = r.board;
+  if (r.quality === 'high' || r.quality === 'low') out.quality = r.quality;
   for (const k of ['rain', 'tutorialDone', 'gmEnabled', 'checkUpdates', 'direct'] as const) if (typeof r[k] === 'boolean') out[k] = r[k] as boolean;
   if (Array.isArray(r.tipsSeen)) out.tipsSeen = r.tipsSeen.filter((x): x is string => typeof x === 'string').slice(0, 40);
   return out;

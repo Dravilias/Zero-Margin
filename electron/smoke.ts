@@ -61,10 +61,12 @@ const LOCAL_CHECK = `
     const before = frames;
     await wait(3000);
     const settledFps = (frames - before) / 3;
+    // The 3D board says itself whether it drew anything; the flat board is checked by reading a pixel.
+    const gl = document.querySelector('.board-gl');
     const canvas = document.querySelector('.board-canvas');
-    const pixel = canvas ? canvas.getContext('2d').getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data[3] : 0;
+    const pixel = gl ? (gl.dataset.drawn === '1' ? 255 : 0) : canvas ? canvas.getContext('2d').getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data[3] : 0;
     return {
-      title: document.title, menuItems, tutorialOpens, desktop: !!window.zmDesktop, inGame: !!document.querySelector('.game'),
+      title: document.title, menuItems, tutorialOpens, board: gl ? '3d' : '2d', desktop: !!window.zmDesktop, inGame: !!document.querySelector('.game'),
       boardDrawn: pixel > 0, displayFont: document.fonts.check('800 16px "Big Shoulders Display"'), monoFont: document.fonts.check('16px "IBM Plex Mono"'),
       framesPerSecond: firstFrames, settledFps, language: navigator.language, screen: innerWidth + 'x' + innerHeight, platform: navigator.platform,
       passed: !!document.querySelector('.game') && pixel > 0 && tutorialOpens,

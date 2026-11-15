@@ -16,6 +16,7 @@ import {
 import { sfx } from './audio';
 import { weaponStats } from './weaponStats';
 import { linkBadge } from './linkBadge';
+import { graphicsSupport } from './board3d/support';
 import { stunOk } from '../net/rtc';
 import { playMusic, setMusicVolume } from './music';
 import { campaignHome, initCampaignScreens, joinCampaign } from './campaign';
@@ -828,6 +829,9 @@ function settingsScreen(): void {
     })),
     field(t('settings.speed'), selectEl(settings.speed, speeds, (v) => { settings.speed = v; saveSettings(); })),
     field(t('update.setting'), selectEl(settings.checkUpdates ? 'on' : 'off', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], (v) => { settings.checkUpdates = v === 'on'; saveSettings(); })),
+    field(t('settings.board'), selectEl(settings.board, (['auto', '3d', '2d'] as const).map((v) => ({ value: v, label: t(`settings.board.${v}`) })), (v) => { settings.board = v; saveSettings(); settingsScreen(); })),
+    el('p.muted.small', {}, t(settings.board === 'auto' && graphicsSupport() !== 'hardware' ? 'settings.boardNoGpu' : 'settings.boardHint')),
+    settings.board !== '2d' ? field(t('settings.quality'), selectEl(settings.quality, (['high', 'low'] as const).map((v) => ({ value: v, label: t(`settings.quality.${v}`) })), (v) => { settings.quality = v; saveSettings(); })) : null,
     field(t('settings.rain'), selectEl(settings.rain ? 'on' : 'off', [{ value: 'on', label: t('settings.on') }, { value: 'off', label: t('settings.off') }], (v) => { settings.rain = v === 'on'; saveSettings(); })),
     field(t('settings.relay'), relay),
     el('p.muted.small', {}, t('settings.relayHint')),

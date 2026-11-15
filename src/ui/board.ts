@@ -2,6 +2,7 @@ import { FACTIONS } from '../engine/data';
 import type { GameState, RoleId, Unit } from '../engine/types';
 import { sfx } from './audio';
 import { ART_SCALE, OUTER, T, renderBoardArt, type BoardArt } from './boardArt';
+import type { BoardView } from './boardView';
 import { afterPaint, el, loadingBar } from './dom';
 import { t } from './i18n';
 import { ROLE_PATHS, SYMBOL_PATHS, isStroked, pictureOf, symbolOf } from './icons';
@@ -48,7 +49,7 @@ interface Anim { start: number; dur: number; draw(c: CanvasRenderingContext2D, k
 
 interface Float { x: number; y: number; text: string; color: string; start: number; dur: number; big: boolean }
 
-export class Board {
+export class Board implements BoardView {
   canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private art: BoardArt | null = null;
@@ -82,6 +83,8 @@ export class Board {
 
   onTileClick: ((x: number, y: number) => void) | null = null;
   onTileHover: ((x: number, y: number) => void) | null = null;
+  /** The flat board doesn't fail; this is here for the 3D board's sake. */
+  onFail: (() => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.canvas = document.createElement('canvas');
